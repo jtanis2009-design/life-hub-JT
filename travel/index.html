@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Traveler</title>
+<meta name="description" content="My regular trips with live public transport times.">
+<meta name="theme-color" content="#0A5C8A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Life Hub">
+<link rel="manifest" href="../manifest.webmanifest">
+<script src="../hub.js" data-home="brand"></script>
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" defer></script>
+<script src="map.js" defer></script>
+<style>
+/* Layout: one phone-width column. Saved trips on top, departures board below. */
+:root {
+  --bg: #EEF2F5;
+  --surface: #FFFFFF;
+  --surface-2: #F6F8FA;
+  --ink: #0E1A24;
+  --muted: #5A6B78;
+  --line: #D6DEE5;
+  --accent: #0A5C8A;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #DCEBF4;
+  --ok: #157A3C;
+  --late: #B9480B;
+  --bad: #C0262D;
+  --bad-soft: #FBE4E4;
+  --warn-soft: #FFF1D6;
+  --warn-ink: #7A4A00;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --radius: 14px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B131A; --surface: #121D26; --surface-2: #17242F; --ink: #E5ECF1; --muted: #93A4B1;
+    --line: #243441; --accent: #5DB3E4; --accent-ink: #06202F; --accent-soft: #15344A;
+    --ok: #4CC27A; --late: #F08A4B; --bad: #FF6B6B; --bad-soft: #3A1A1D; --warn-soft: #33270F; --warn-ink: #F3C979;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B131A; --surface: #121D26; --surface-2: #17242F; --ink: #E5ECF1; --muted: #93A4B1;
+  --line: #243441; --accent: #5DB3E4; --accent-ink: #06202F; --accent-soft: #15344A;
+  --ok: #4CC27A; --late: #F08A4B; --bad: #FF6B6B; --bad-soft: #3A1A1D; --warn-soft: #33270F; --warn-ink: #F3C979;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.45 var(--font-body);
+  -webkit-text-size-adjust: 100%;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.wrap {
+  max-width: 560px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px 40px;
+  display: grid;
+  gap: 18px;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand svg { width: 30px; height: 30px; flex: none; }
+.brand h1 { font: 700 26px/1 var(--font-display); letter-spacing: .01em; margin: 0; }
+.clock { font: 600 22px/1 var(--font-display); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.label { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.linkbtn { background: none; border: 0; padding: 4px 2px; color: var(--accent); font-weight: 700; font-size: 14px; }
+
+/* Trips */
+.trips { display: grid; gap: 10px; }
+.trip {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px;
+  background: var(--surface); border: 2px solid var(--line); border-radius: var(--radius);
+  padding: 12px 12px 12px 14px; text-align: left; width: 100%;
+}
+.trip[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.trip-main { min-width: 0; display: grid; gap: 2px; }
+.trip-route { font-weight: 700; font-size: 17px; line-height: 1.25; }
+.trip-route .arrow { color: var(--accent); padding: 0 4px; }
+.trip-next { font-size: 14px; color: var(--muted); min-height: 1.45em; }
+.trip-next strong { color: var(--ink); }
+.trip-actions { display: flex; gap: 6px; }
+.iconbtn {
+  width: 42px; height: 42px; display: grid; place-items: center; flex: none;
+  border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+}
+.iconbtn svg { width: 20px; height: 20px; }
+.iconbtn.danger { color: var(--bad); }
+
+/* Time controls */
+.when { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+.seg button { border: 0; background: none; padding: 8px 12px; border-radius: 9px; font-weight: 700; font-size: 14px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.when input[type="datetime-local"] {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; min-width: 0; max-width: 100%;
+}
+
+/* Board */
+.board-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.board-title { font: 700 22px/1.15 var(--font-display); margin: 0; text-wrap: balance; }
+.updated { font-size: 13px; color: var(--muted); }
+.list { display: grid; gap: 10px; }
+.it { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.it.gone { opacity: .55; }
+.it > button.sum { all: unset; box-sizing: border-box; display: grid; gap: 10px; width: 100%; padding: 14px; cursor: pointer; }
+.it > button.sum:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: var(--radius); }
+.row1 { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.times { font: 700 30px/1 var(--font-display); font-variant-numeric: tabular-nums; letter-spacing: .01em; white-space: nowrap; }
+.times .to { color: var(--muted); font-weight: 600; }
+.times .sep { color: var(--muted); font-weight: 500; padding: 0 .15em; }
+.countdown { font: 700 18px/1 var(--font-display); white-space: nowrap; color: var(--accent); text-align: right; }
+.countdown.soon { color: var(--late); }
+.row2 { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px; border-radius: 6px;
+  font: 700 15px/1.1 var(--font-display); letter-spacing: .02em; background: var(--surface-2); border: 1px solid var(--line);
+}
+.chip svg { width: 15px; height: 15px; }
+.chip.walk { background: none; border-color: transparent; color: var(--muted); padding: 3px 2px; font-weight: 600; }
+.chevron { color: var(--muted); font-size: 13px; }
+.meta { font-size: 14px; color: var(--muted); white-space: nowrap; }
+.flags { display: flex; gap: 6px; flex-wrap: wrap; }
+.flag { font-size: 13px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.flag.late { color: var(--late); background: var(--warn-soft); }
+.flag.live { color: var(--ok); background: transparent; border: 1px solid currentColor; }
+.flag.cancel { color: var(--bad); background: var(--bad-soft); }
+.flag.alert { color: var(--warn-ink); background: var(--warn-soft); }
+
+/* Detail */
+.detail { border-top: 1px solid var(--line); background: var(--surface-2); padding: 12px 14px 14px; display: grid; gap: 12px; }
+.leg { display: grid; grid-template-columns: 54px 1fr; gap: 2px 10px; }
+.leg .t { font: 700 17px/1.35 var(--font-display); font-variant-numeric: tabular-nums; }
+.leg .t s { display: block; font-weight: 500; font-size: 14px; color: var(--muted); }
+.leg .t.late { color: var(--late); }
+.leg .stop { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.leg .stop .track { font-weight: 400; color: var(--muted); font-size: 14px; }
+.leg .ride { grid-column: 2; display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 14px; padding: 6px 0 6px 10px; border-left: 4px solid var(--line); margin-left: -2px; flex-wrap: wrap; }
+.walkline { color: var(--muted); font-size: 14px; display: flex; gap: 6px; align-items: center; padding-left: 64px; }
+.walkline svg { width: 16px; height: 16px; }
+.alerts { display: grid; gap: 6px; }
+.alertbox { background: var(--warn-soft); color: var(--warn-ink); border-radius: 10px; padding: 8px 10px; font-size: 14px; }
+
+.more { display: flex; justify-content: center; }
+.btn {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 10px 16px; font-weight: 700;
+}
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.state { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); padding: 18px; color: var(--muted); text-align: center; }
+.state.err { border-style: solid; border-color: var(--bad); color: var(--ink); }
+.skeleton { height: 96px; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; border: 1px solid var(--line); }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+
+/* Add trip sheet */
+dialog { border: 0; border-radius: 18px; padding: 0; width: min(520px, calc(100vw - 24px)); background: var(--surface); color: var(--ink); }
+dialog::backdrop { background: rgba(5, 12, 18, .55); }
+.sheet { padding: 18px; display: grid; gap: 14px; }
+.sheet h2 { font: 700 22px/1.1 var(--font-display); margin: 0; }
+.field { display: grid; gap: 6px; position: relative; }
+.field input { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; background: var(--surface-2); }
+.field .picked { font-size: 14px; color: var(--ok); font-weight: 700; }
+.sugg { list-style: none; margin: 0; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); max-height: 220px; overflow: auto; }
+.sugg button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.sugg button:hover, .sugg button:focus-visible { background: var(--accent-soft); }
+.sugg small { display: block; color: var(--muted); }
+.sheet-actions { display: flex; justify-content: flex-end; gap: 8px; }
+footer { font-size: 12px; color: var(--muted); text-align: center; }
+
+/* Tabs */
+.head-wrap { padding-bottom: 0; gap: 14px; }
+.tabs { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 3px; }
+.tabs button { border: 0; background: none; padding: 9px 12px; border-radius: 9px; font-weight: 700; color: var(--muted); }
+.tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+#tripsView { padding-top: 0; }
+
+/* Map view */
+body.map-mode { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+body.map-mode .head-wrap { width: 100%; padding-bottom: 12px; }
+.mapview { position: relative; flex: 1; min-height: 0; border-top: 1px solid var(--line); }
+#map { position: absolute; inset: 0; background: var(--surface-2); }
+.leaflet-container { font: 14px/1.4 var(--font-body); }
+.leaflet-control-attribution { font-size: 10px; }
+.map-top { position: absolute; z-index: 500; top: 10px; left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); display: flex; gap: 8px; align-items: flex-start; pointer-events: none; }
+.map-top > * { pointer-events: auto; }
+.map-filters { flex-wrap: wrap; box-shadow: 0 2px 10px rgba(0,0,0,.15); min-width: 0; }
+.map-filters button { padding: 6px 10px; font-size: 13px; }
+.locate { margin-left: auto; box-shadow: 0 2px 10px rgba(0,0,0,.15); background: var(--surface); }
+.locate.busy { color: var(--accent); }
+.map-status { position: absolute; z-index: 500; left: max(10px, env(safe-area-inset-left, 0px)); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 80px); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 6px 10px; font-size: 13px; box-shadow: 0 2px 10px rgba(0,0,0,.15); }
+.mapview:has(.track-panel:not([hidden])) .map-status { display: none; }
+
+/* Vehicles are drawn on one canvas inside the map (map.js) */
+.tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(.82) contrast(.92); }
+
+/* Tracking panel */
+.track-panel {
+  position: absolute; z-index: 600; left: max(10px, env(safe-area-inset-left, 0px)); right: max(10px, env(safe-area-inset-right, 0px));
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px)); max-height: 52%; display: flex; flex-direction: column; gap: 8px;
+  background: var(--surface); color: var(--ink); border-radius: 16px; padding: 12px 12px 6px; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+  max-width: 520px; margin-inline: auto;
+}
+.tp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tp-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 700; font-size: 17px; }
+.tp-title .chip { font-size: 17px; padding: 4px 9px; }
+.tp-hs { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-sub { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.flag.sched-flag { color: var(--muted); border: 1px dashed currentColor; }
+.tp-where { font-size: 15px; }
+.tp-board { font-size: 15px; background: var(--accent-soft); border-radius: 10px; padding: 7px 10px; }
+.tp-board.past { background: var(--surface-2); color: var(--muted); }
+.tp-actions { display: flex; gap: 8px; }
+.btn.sm { padding: 6px 12px; font-size: 14px; }
+.btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.tp-stops { list-style: none; margin: 0; padding: 0 0 6px; overflow: auto; min-height: 60px; position: relative; }
+.tp-stops li { display: grid; grid-template-columns: 50px 18px 1fr; align-items: center; gap: 6px; padding: 4px 0; font-size: 14px; position: relative; }
+.tp-stops li::before { content: ""; position: absolute; left: 63px; top: 0; bottom: 0; width: 4px; background: var(--c); opacity: .9; }
+.tp-stops li:first-child::before { top: 50%; }
+.tp-stops li:last-child::before { bottom: 50%; }
+.tp-stops li.passed { color: var(--muted); }
+.tp-stops li.passed::before { opacity: .3; }
+.tp-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 3px solid var(--c); position: relative; z-index: 1; justify-self: center; }
+.tp-stops li.next .tp-dot { width: 16px; height: 16px; background: var(--c); }
+.tp-stops li.next .tp-n { font-weight: 700; }
+.tp-stops li.mine .tp-n { font-weight: 700; color: var(--accent); }
+.tp-stops li.mine .tp-dot { box-shadow: 0 0 0 3px var(--accent-soft); }
+.tp-t { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
+.tp-t.late { color: var(--late); }
+.tp-t s { display: block; font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1; }
+.tp-n small { color: var(--muted); font-weight: 400; }
+.tp-n .cxl { color: var(--bad); font-weight: 700; }
+
+.track-btn { margin-left: auto; border: 1px solid var(--accent); color: var(--accent); background: var(--surface); border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+.track-btn::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px var(--accent-soft); }
+footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="wrap head-wrap">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="var(--accent)"/><path d="M9 21.5V11a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v10.5M9 17h14M12 24.5l1.5-3M20 24.5l-1.5-3" stroke="var(--accent-ink)" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12.5" cy="19.6" r="1" fill="var(--accent-ink)"/><circle cx="19.5" cy="19.6" r="1" fill="var(--accent-ink)"/></svg>
+      <h1>Traveler</h1>
+    </div>
+    <div class="clock" id="clock" aria-label="Current time">--:--</div>
+  </header>
+  <nav class="tabs" aria-label="View">
+    <button type="button" data-view="trips" aria-pressed="true">My trips</button>
+    <button type="button" data-view="map" aria-pressed="false">Live map</button>
+  </nav>
+</div>
+
+<div class="wrap" id="tripsView">
+
+  <section aria-labelledby="trips-label" style="display:grid;gap:10px">
+    <div class="section-head">
+      <span class="label" id="trips-label">My trips</span>
+      <span>
+        <button class="linkbtn" id="editBtn" type="button">Edit</button>
+        <button class="linkbtn" id="addBtn" type="button">+ Add trip</button>
+      </span>
+    </div>
+    <div class="trips" id="trips"></div>
+  </section>
+
+  <section class="when" aria-label="When">
+    <div class="seg" role="group" aria-label="Time mode">
+      <button type="button" data-mode="now" aria-pressed="true">Now</button>
+      <button type="button" data-mode="depart" aria-pressed="false">Depart at</button>
+      <button type="button" data-mode="arrive" aria-pressed="false">Arrive by</button>
+    </div>
+    <input type="datetime-local" id="whenInput" hidden aria-label="Date and time">
+  </section>
+
+  <section aria-live="polite" style="display:grid;gap:12px">
+    <div class="board-head">
+      <h2 class="board-title" id="boardTitle">Departures</h2>
+      <span class="updated" id="updated"></span>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="more" id="more" hidden><button class="btn" id="laterBtn" type="button">Show later trips</button></div>
+  </section>
+
+  <footer>Times from <a href="https://transitous.org" target="_blank" rel="noopener">Transitous</a> (OpenOV data, live where operators share it).</footer>
+</div>
+
+<section class="mapview" id="mapView" hidden aria-label="Live map">
+  <div id="map"></div>
+  <div class="map-top">
+    <div class="seg map-filters" id="mapFilters" role="group" aria-label="Show">
+      <button type="button" data-filter="all" aria-pressed="true">All</button>
+      <button type="button" data-filter="mine" aria-pressed="false">My lines</button>
+      <button type="button" data-filter="bus" aria-pressed="false">Bus</button>
+      <button type="button" data-filter="metro" aria-pressed="false">Metro</button>
+      <button type="button" data-filter="tram" aria-pressed="false">Tram</button>
+      <button type="button" data-filter="train" aria-pressed="false">Train</button>
+    </div>
+    <button class="iconbtn locate" id="locateBtn" type="button" aria-label="Show my location"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+  </div>
+  <div class="map-status" id="mapStatus">Loading vehicles…</div>
+  <div class="track-panel" id="trackPanel" hidden></div>
+</section>
+
+<dialog id="addDlg" aria-labelledby="addTitle">
+  <form class="sheet" id="addForm" method="dialog">
+    <h2 id="addTitle">Add a trip</h2>
+    <div class="field" data-key="a">
+      <label class="label" for="addA">From</label>
+      <input id="addA" autocomplete="off" placeholder="Stop, station or address">
+      <span class="picked" hidden></span>
+      <ul class="sugg" hidden></ul>
+    </div>
+    <div class="field" data-key="b">
+      <label class="label" for="addB">To</label>
+      <input id="addB" autocomplete="off" placeholder="Stop, station or address">
+      <span class="picked" hidden></span>
+      <ul class="sugg" hidden></ul>
+    </div>
+    <p class="updated" style="margin:0">The trip works both ways. Tap the swap button to go back.</p>
+    <div class="sheet-actions">
+      <button class="btn" type="button" id="addCancel">Cancel</button>
+      <button class="btn primary" type="submit" id="addSave" disabled>Save trip</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const API = "https://api.transitous.org/api/v5";
+const GEOCODE_API = "https://api.transitous.org/api/v1";
+const TZ = "Europe/Amsterdam";
+const REFRESH_MS = 60_000;
+
+// Coordinates are used instead of stop ids: ids can change when the timetable data is refreshed.
+const DEFAULT_TRIPS = [
+  { id: "mh-glr", a: { name: "Middelharnis, Gemeentehuis", short: "Middelharnis", place: "51.7554,4.160899" },
+                  b: { name: "Grafisch Lyceum Rotterdam", short: "Grafisch Lyceum", place: "51.9275955,4.478099" } },
+  { id: "ot-glr", a: { name: "Oude-Tonge, Busstation", short: "Oude-Tonge", place: "51.695873,4.2125177" },
+                  b: { name: "Grafisch Lyceum Rotterdam", short: "Grafisch Lyceum", place: "51.9275955,4.478099" } },
+];
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("traveler." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("traveler." + k, JSON.stringify(v)); } catch {} },
+};
+
+const state = {
+  trips: store.get("trips", DEFAULT_TRIPS),
+  selected: store.get("selected", "mh-glr"),
+  reversed: {},            // tripId -> bool, set when the user swaps manually
+  mode: "now",             // now | depart | arrive
+  when: null,              // Date for depart/arrive
+  itineraries: [],
+  cursor: null,
+  open: new Set(),
+  loading: false,
+  error: null,
+  updatedAt: null,
+  editing: false,
+  nextByTrip: {},          // tripId -> itinerary (for the small preview line)
+};
+if (!state.trips.some(t => t.id === state.selected)) state.selected = state.trips[0]?.id;
+
+const $ = s => document.querySelector(s);
+const fmtTime = new Intl.DateTimeFormat("nl-NL", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+const fmtDay = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: TZ });
+const t = iso => fmtTime.format(new Date(iso));
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const mins = ms => Math.round(ms / 60000);
+// The time picker always means Dutch time, whatever timezone the phone is set to.
+function nlParts(d) {
+  const o = {};
+  for (const x of new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(d)) o[x.type] = x.value;
+  return o;
+}
+function toNLInput(d) { const o = nlParts(d); return `${o.year}-${o.month}-${o.day}T${o.hour}:${o.minute}`; }
+function fromNLInput(v) {
+  const [date, time] = v.split("T"); const [y, mo, da] = date.split("-").map(Number); const [h, mi] = time.split(":").map(Number);
+  const guess = Date.UTC(y, mo - 1, da, h, mi);
+  const o = nlParts(new Date(guess));
+  const offset = Date.UTC(+o.year, +o.month - 1, +o.day, +o.hour, +o.minute) - guess;
+  return new Date(guess - offset);
+}
+function hourInNL(d = new Date()) { return +new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone: TZ }).format(d); }
+
+// Before 13:00 you are probably going to school, after that probably going home.
+function isReversed(trip) {
+  if (trip.id in state.reversed) return state.reversed[trip.id];
+  return hourInNL(state.mode === "now" ? new Date() : (state.when || new Date())) >= 13;
+}
+function ends(trip) { return isReversed(trip) ? [trip.b, trip.a] : [trip.a, trip.b]; }
+
+// ---------- API ----------
+async function plan(from, to, { time, arriveBy, cursor } = {}) {
+  const p = new URLSearchParams({ fromPlace: from.place, toPlace: to.place });
+  if (cursor) p.set("pageCursor", cursor);
+  else if (time) p.set("time", time.toISOString());
+  if (arriveBy) p.set("arriveBy", "true");
+  const res = await fetch(`${API}/plan?${p}`);
+  if (!res.ok) throw new Error(`The journey planner answered ${res.status}.`);
+  return res.json();
+}
+async function geocode(text) {
+  const p = new URLSearchParams({ text, language: "nl" });
+  const res = await fetch(`${GEOCODE_API}/geocode?${p}`);
+  if (!res.ok) throw new Error("Search failed");
+  return res.json();
+}
+
+// ---------- itinerary helpers ----------
+const transitLegs = it => it.legs.filter(l => l.mode !== "WALK" && l.mode !== "BIKE" && l.mode !== "CAR");
+const firstRide = it => transitLegs(it)[0];
+const delayMin = (actual, sched) => (actual && sched) ? mins(new Date(actual) - new Date(sched)) : 0;
+const isCancelled = it => it.legs.some(l => l.cancelled || l.from?.cancelled || l.to?.cancelled);
+function departTime(it) { const r = firstRide(it); return new Date(r ? r.from.departure : it.startTime); }
+function alertsFor(it) {
+  const s = new Date(it.startTime), e = new Date(it.endTime), seen = new Map();
+  const add = a => {
+    if (!a?.headerText || seen.has(a.headerText)) return;
+    const periods = a.impactPeriod?.length ? a.impactPeriod : a.communicationPeriod;
+    const hits = !periods?.length || periods.some(p => new Date(p.start || 0) <= e && new Date(p.end || 8.64e15) >= s);
+    if (hits) seen.set(a.headerText, a);
+  };
+  for (const l of it.legs) { (l.alerts || []).forEach(add); (l.from?.alerts || []).forEach(add); (l.to?.alerts || []).forEach(add); }
+  return [...seen.values()];
+}
+function modeIcon(mode) {
+  const m = mode || "";
+  if (m === "WALK") return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="13" cy="4" r="2"/><path d="M10.5 8.5 8 20h2.2l1.5-6.6 2.3 2.1V20H16v-5.3l-2.2-2.1.6-3A6.5 6.5 0 0 0 19 12v-2a4.6 4.6 0 0 1-3.9-2.2l-1-1.6a2 2 0 0 0-2.5-.8L7 7.3V11h2V8.6z"/></svg>';
+  if (m === "SUBWAY" || m === "METRO") return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 18V6l7 7 7-7v12"/></svg>';
+  if (m === "TRAM") return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="3"/><path d="M9 3h6M12 3v3M8 21l2-3M16 21l-2-3M6 13h12"/></svg>';
+  if (/RAIL|TRAIN|SUBURBAN|REGIONAL|LONG_DISTANCE|HIGHSPEED|NIGHT_RAIL/.test(m)) return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="6" y="3" width="12" height="14" rx="3"/><path d="M6 11h12M8 21l2-4M16 21l-2-4"/></svg>';
+  if (m === "FERRY") return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 18c2 1.5 4 1.5 6 0s4-1.5 6 0 4 1.5 6 0M5 15l1-5h12l1 5M9 10V6h6v4"/></svg>';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="3" width="14" height="15" rx="3"/><path d="M5 11h14M8 21v-3M16 21v-3"/><circle cx="8.5" cy="14.5" r=".6" fill="currentColor"/><circle cx="15.5" cy="14.5" r=".6" fill="currentColor"/></svg>';
+}
+const modeWord = m => ({ BUS: "Bus", SUBWAY: "Metro", METRO: "Metro", TRAM: "Tram", FERRY: "Ferry", COACH: "Bus" }[m] || (/RAIL|TRAIN|REGIONAL|SUBURBAN|LONG_DISTANCE|HIGHSPEED/.test(m) ? "Train" : "Ride"));
+function chipStyle(l) {
+  if (!l.routeColor) return "";
+  const bg = "#" + l.routeColor, fg = l.routeTextColor ? "#" + l.routeTextColor : "#fff";
+  return `style="background:${esc(bg)};color:${esc(fg)};border-color:${esc(bg)}"`;
+}
+function legChip(l) {
+  if (l.mode === "WALK") return `<span class="chip walk" title="Walk">${modeIcon("WALK")}${Math.max(1, mins(l.duration * 1000))}′</span>`;
+  const name = l.routeShortName || l.displayName || modeWord(l.mode);
+  return `<span class="chip" ${chipStyle(l)} title="${esc(modeWord(l.mode) + " " + name)}">${modeIcon(l.mode)}${esc(name)}</span>`;
+}
+function countdownText(ms, leave) {
+  const m = Math.floor(ms / 60000);
+  if (ms < -60000 && !leave) return "gone";
+  if (m <= 0) return leave ? "leave now" : "now";
+  if (m < 60) return `in ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h >= 6) { const at = new Date(Date.now() + ms); return toNLInput(at).slice(0, 10) === toNLInput(new Date()).slice(0, 10) ? "today" : fmtDay.format(at); }
+  return `in ${h} h ${String(m % 60).padStart(2, "0")}`;
+}
+
+// ---------- rendering ----------
+function renderTrips() {
+  const el = $("#trips");
+  if (!state.trips.length) { el.innerHTML = `<div class="state">No trips yet. Tap <strong>+ Add trip</strong> to save your first one.</div>`; return; }
+  el.innerHTML = state.trips.map(trip => {
+    const [from, to] = ends(trip);
+    const nx = state.nextByTrip[trip.id];
+    let next = "&nbsp;";
+    if (nx) {
+      const r = firstRide(nx);
+      next = `Leave <strong class="num">${t(nx.startTime)}</strong> · <span class="num">${countdownText(new Date(nx.startTime) - Date.now(), true)}</span>${r ? ` · ${esc(modeWord(r.mode) + " " + (r.routeShortName || ""))} ${t(r.from.departure)}` : ""}`;
+    }
+    const sel = trip.id === state.selected;
+    return `<div class="trip" role="button" tabindex="0" data-trip="${esc(trip.id)}" aria-pressed="${sel}">
+      <div class="trip-main">
+        <span class="trip-route">${esc(from.short || from.name)}<span class="arrow" aria-label="to">→</span>${esc(to.short || to.name)}</span>
+        <span class="trip-next">${next}</span>
+      </div>
+      <div class="trip-actions">
+        ${state.editing
+          ? `<button class="iconbtn danger" type="button" data-del="${esc(trip.id)}" aria-label="Remove trip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>`
+          : `<button class="iconbtn" type="button" data-swap="${esc(trip.id)}" aria-label="Swap direction"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg></button>`}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function renderBoard() {
+  const trip = state.trips.find(x => x.id === state.selected);
+  const list = $("#list");
+  if (!trip) { $("#boardTitle").textContent = "Departures"; list.innerHTML = ""; $("#more").hidden = true; return; }
+  const [from, to] = ends(trip);
+  $("#boardTitle").textContent = `${from.name} → ${to.name}`;
+  $("#updated").textContent = state.updatedAt ? `Updated ${t(state.updatedAt.toISOString())}` : "";
+
+  if (state.error && !state.itineraries.length) {
+    list.innerHTML = `<div class="state err"><strong>Couldn't load trips.</strong><br>${esc(state.error)} Check your connection and try again.<br><br><button class="btn" type="button" id="retry">Try again</button></div>`;
+    $("#more").hidden = true; return;
+  }
+  if (state.loading && !state.itineraries.length) { list.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`; $("#more").hidden = true; return; }
+  if (!state.itineraries.length) { list.innerHTML = `<div class="state">No connections found for this time. Try a later time.</div>`; $("#more").hidden = true; return; }
+
+  const now = Date.now();
+  list.innerHTML = state.itineraries.map((it, i) => {
+    const key = it.startTime + "|" + it.endTime + "|" + (firstRide(it)?.tripId || i);
+    const open = state.open.has(key);
+    const dep = departTime(it);
+    const left = new Date(it.startTime) - now;
+    const gone = dep - now < -60000;
+    const r = firstRide(it);
+    const depDelay = r ? delayMin(r.from.departure, r.from.scheduledDeparture) : 0;
+    const lastRide = transitLegs(it).at(-1);
+    const arrDelay = lastRide ? delayMin(lastRide.to.arrival, lastRide.to.scheduledArrival) : 0;
+    const live = transitLegs(it).some(l => l.realTime);
+    const cancelled = isCancelled(it);
+    const alerts = alertsFor(it);
+    const dur = mins(it.duration * 1000);
+    const flags = [
+      cancelled ? `<span class="flag cancel">Cancelled</span>` : "",
+      depDelay > 0 ? `<span class="flag late">+${depDelay} min late</span>` : "",
+      live && depDelay <= 0 && !cancelled ? `<span class="flag live">Live</span>` : "",
+      alerts.length ? `<span class="flag alert">Notice</span>` : "",
+    ].join("");
+    return `<article class="it ${gone ? "gone" : ""}">
+      <button class="sum" type="button" data-open="${esc(key)}" aria-expanded="${open}">
+        <div class="row1">
+          <span class="times num">${t(it.startTime)}<span class="sep">–</span><span class="to">${t(it.endTime)}</span></span>
+          <span class="countdown num ${left < 10 * 60000 && !gone ? "soon" : ""}">${gone ? "gone" : countdownText(left, true)}</span>
+        </div>
+        <div class="row2">
+          <span class="chips">${it.legs.filter(l => !(l.mode === "WALK" && l.duration < 90)).map(legChip).join('<span class="chevron">›</span>')}</span>
+          <span class="meta num">${Math.floor(dur / 60) ? Math.floor(dur / 60) + " h " : ""}${dur % 60} min · ${it.transfers} ${it.transfers === 1 ? "transfer" : "transfers"}</span>
+        </div>
+        ${flags.trim() ? `<div class="flags">${flags}${arrDelay > 0 && depDelay <= 0 ? `<span class="flag late">arrives +${arrDelay}</span>` : ""}</div>` : ""}
+      </button>
+      ${open ? renderDetail(it, alerts) : ""}
+    </article>`;
+  }).join("");
+  $("#more").hidden = !state.cursor;
+}
+
+function timeCell(actual, sched) {
+  const d = delayMin(actual, sched);
+  if (d > 0) return `<span class="t late">${t(actual)}<s>${t(sched)}</s></span>`;
+  return `<span class="t">${t(actual || sched)}</span>`;
+}
+function renderDetail(it, alerts) {
+  const parts = [];
+  for (const l of it.legs) {
+    if (l.mode === "WALK") {
+      if (l.duration < 30) continue;
+      const dist = l.distance ? ` · ${l.distance < 1000 ? Math.round(l.distance / 10) * 10 + " m" : (l.distance / 1000).toFixed(1) + " km"}` : "";
+      parts.push(`<div class="walkline">${modeIcon("WALK")} Walk ${Math.max(1, mins(l.duration * 1000))} min${dist}</div>`);
+      continue;
+    }
+    const tr = l.from.track ? ` <span class="track">· platform ${esc(l.from.track)}</span>` : "";
+    const ttr = l.to.track ? ` <span class="track">· platform ${esc(l.to.track)}</span>` : "";
+    const stops = l.intermediateStops?.length;
+    parts.push(`<div class="leg">
+      ${timeCell(l.from.departure, l.from.scheduledDeparture)}<span class="stop">${esc(l.from.name)}${tr}</span>
+      <span class="ride">${legChip(l)} towards ${esc(l.headsign || l.to.name)}${stops ? ` · ${stops} stops` : ""}${l.agencyName ? ` · ${esc(l.agencyName)}` : ""}${l.cancelled ? ` · <strong style="color:var(--bad)">cancelled</strong>` : ""}${l.tripId ? `<button type="button" class="track-btn" data-track="${esc(l.tripId)}" data-board-id="${esc(l.from.stopId || "")}" data-board-name="${esc(l.from.name)}">Track live</button>` : ""}</span>
+      ${timeCell(l.to.arrival, l.to.scheduledArrival)}<span class="stop">${esc(l.to.name)}${ttr}</span>
+    </div>`);
+  }
+  const al = alerts.length ? `<div class="alerts">${alerts.map(a => `<div class="alertbox">${esc(a.headerText)}</div>`).join("")}</div>` : "";
+  return `<div class="detail">${parts.join("")}${al}</div>`;
+}
+
+function render() { renderTrips(); renderBoard(); }
+
+// ---------- loading ----------
+let loadSeq = 0;
+async function load({ append = false } = {}) {
+  const trip = state.trips.find(x => x.id === state.selected);
+  if (!trip) return render();
+  const [from, to] = ends(trip);
+  const seq = ++loadSeq;
+  state.loading = true; state.error = null;
+  if (!append) { state.itineraries = []; state.cursor = null; }
+  render();
+  try {
+    const opts = append ? { cursor: state.cursor } :
+      state.mode === "now" ? { time: new Date() } : { time: state.when || new Date(), arriveBy: state.mode === "arrive" };
+    const data = await plan(from, to, opts);
+    if (seq !== loadSeq) return;
+    let its = data.itineraries || [];
+    // In "now" mode hide trips whose first vehicle already left more than a minute ago.
+    if (state.mode === "now" && !append) its = its.filter(it => departTime(it) - Date.now() > -60000);
+    // Arrive by: the latest trip that still gets you there on time goes first.
+    if (state.mode === "arrive" && !append) its = its.slice().sort((x, y) => new Date(y.endTime) - new Date(x.endTime));
+    state.itineraries = append ? dedupe(state.itineraries.concat(its)) : its;
+    state.cursor = state.mode === "arrive" && !append ? null : data.nextPageCursor || null;
+    state.updatedAt = new Date();
+    if (state.mode === "now" && its[0]) state.nextByTrip[trip.id] = its[0];
+  } catch (e) {
+    if (seq !== loadSeq) return;
+    state.error = e.message || "Network error.";
+  } finally {
+    if (seq === loadSeq) { state.loading = false; render(); }
+  }
+}
+function dedupe(its) {
+  const seen = new Set();
+  return its.filter(it => { const k = it.startTime + it.endTime + (firstRide(it)?.tripId || ""); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+// Fill the small "Next:" line on the other trip cards.
+async function loadPreviews() {
+  await Promise.all(state.trips.filter(tr => tr.id !== state.selected || state.mode !== "now").map(async trip => {
+    try {
+      const [from, to] = ends(trip);
+      const d = await plan(from, to, { time: new Date() });
+      const it = (d.itineraries || []).find(x => departTime(x) - Date.now() > -60000);
+      if (it) state.nextByTrip[trip.id] = it; else delete state.nextByTrip[trip.id];
+    } catch {}
+  }));
+  renderTrips();
+}
+
+// ---------- events ----------
+$("#trips").addEventListener("click", e => {
+  const sw = e.target.closest("[data-swap]");
+  if (sw) {
+    const trip = state.trips.find(x => x.id === sw.dataset.swap);
+    state.reversed[trip.id] = !isReversed(trip);
+    delete state.nextByTrip[trip.id];
+    if (trip.id !== state.selected) { state.selected = trip.id; store.set("selected", trip.id); }
+    state.open.clear(); load(); loadPreviews(); return;
+  }
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    state.trips = state.trips.filter(x => x.id !== del.dataset.del);
+    store.set("trips", state.trips);
+    if (state.selected === del.dataset.del) { state.selected = state.trips[0]?.id; store.set("selected", state.selected); load(); }
+    if (!state.trips.length) { state.editing = false; $("#editBtn").textContent = "Edit"; }
+    render(); return;
+  }
+  const card = e.target.closest("[data-trip]");
+  if (card && card.dataset.trip !== state.selected) {
+    state.selected = card.dataset.trip; store.set("selected", state.selected);
+    state.open.clear(); load();
+  }
+});
+$("#trips").addEventListener("keydown", e => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches("[data-trip]")) { e.preventDefault(); e.target.click(); }
+});
+$("#list").addEventListener("click", e => {
+  if (e.target.closest("#retry")) return load();
+  const tb = e.target.closest("[data-track]");
+  if (tb) { setView("map"); window.LiveMap?.track(tb.dataset.track, { id: tb.dataset.boardId, name: tb.dataset.boardName }); return; }
+  const b = e.target.closest("[data-open]");
+  if (!b) return;
+  const k = b.dataset.open;
+  state.open.has(k) ? state.open.delete(k) : state.open.add(k);
+  renderBoard();
+});
+$("#laterBtn").addEventListener("click", () => load({ append: true }));
+$("#editBtn").addEventListener("click", () => { state.editing = !state.editing; $("#editBtn").textContent = state.editing ? "Done" : "Edit"; renderTrips(); });
+
+document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => {
+  state.mode = b.dataset.mode;
+  document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  const inp = $("#whenInput");
+  inp.hidden = state.mode === "now";
+  if (state.mode !== "now") {
+    if (!inp.value) {
+      // Sensible default: arrive by 08:30 tomorrow morning, or depart in 15 minutes.
+      if (state.mode === "arrive") {
+        const now = new Date(), day = hourInNL(now) >= 8 ? new Date(now.getTime() + 864e5) : now;
+        inp.value = toNLInput(day).slice(0, 11) + "08:30";
+      } else inp.value = toNLInput(new Date(Date.now() + 15 * 60000));
+    }
+    state.when = fromNLInput(inp.value);
+  }
+  state.open.clear(); load();
+}));
+$("#whenInput").addEventListener("change", e => { if (e.target.value) { state.when = fromNLInput(e.target.value); state.open.clear(); load(); } });
+
+// ---------- add trip ----------
+const dlg = $("#addDlg");
+const picked = { a: null, b: null };
+function placeLabel(x) {
+  const area = (x.areas || []).map(a => a.name).filter((n, i, arr) => n && arr.indexOf(n) === i && n !== "Nederland").slice(-2).join(", ");
+  return { name: x.name, area };
+}
+function shortName(name) { return name.includes(",") ? name.split(",")[0].trim() : name; }
+document.querySelectorAll("#addForm .field").forEach(field => {
+  const key = field.dataset.key, input = field.querySelector("input"), ul = field.querySelector(".sugg"), ok = field.querySelector(".picked");
+  let timer, results = [];
+  input.addEventListener("input", () => {
+    picked[key] = null; ok.hidden = true; $("#addSave").disabled = true;
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 3) { ul.hidden = true; return; }
+    timer = setTimeout(async () => {
+      try {
+        results = (await geocode(q)).filter(x => x.lat != null).slice(0, 7);
+        ul.innerHTML = results.length ? results.map((x, i) => {
+          const l = placeLabel(x);
+          const kind = x.type === "STOP" ? "Stop" : x.type === "ADDRESS" ? "Address" : "Place";
+          return `<li><button type="button" data-i="${i}">${esc(l.name)}<small>${kind}${l.area ? " · " + esc(l.area) : ""}</small></button></li>`;
+        }).join("") : `<li style="padding:8px 10px;color:var(--muted)">Nothing found. Try the town name plus the stop.</li>`;
+        ul.hidden = false;
+      } catch { ul.innerHTML = `<li style="padding:8px 10px;color:var(--muted)">Search isn't reachable right now.</li>`; ul.hidden = false; }
+    }, 300);
+  });
+  ul.addEventListener("click", e => {
+    const b = e.target.closest("[data-i]"); if (!b) return;
+    const x = results[+b.dataset.i];
+    picked[key] = { name: x.name, short: shortName(x.name), place: `${x.lat},${x.lon}` };
+    input.value = x.name; ul.hidden = true; ok.hidden = false; ok.textContent = "✓ Selected";
+    $("#addSave").disabled = !(picked.a && picked.b);
+  });
+});
+$("#addBtn").addEventListener("click", () => {
+  picked.a = picked.b = null;
+  dlg.querySelectorAll("input").forEach(i => i.value = "");
+  dlg.querySelectorAll(".sugg, .picked").forEach(x => x.hidden = true);
+  $("#addSave").disabled = true;
+  dlg.showModal(); $("#addA").focus();
+});
+$("#addCancel").addEventListener("click", () => dlg.close());
+$("#addForm").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!(picked.a && picked.b)) return;
+  const trip = { id: "t" + Date.now().toString(36), a: picked.a, b: picked.b };
+  state.trips.push(trip); store.set("trips", state.trips);
+  state.selected = trip.id; store.set("selected", trip.id);
+  state.reversed[trip.id] = false;
+  dlg.close(); state.open.clear(); load();
+});
+
+// ---------- views ----------
+let view = "trips";
+function myLineNames() {
+  const names = new Set();
+  const its = state.itineraries.concat(Object.values(state.nextByTrip));
+  its.forEach(it => transitLegs(it).forEach(l => (l.routeShortName || l.displayName) && names.add(l.routeShortName || l.displayName)));
+  return [...names];
+}
+function setView(v, fromHash) {
+  view = v === "map" ? "map" : "trips";
+  document.querySelectorAll(".tabs [data-view]").forEach(b => b.setAttribute("aria-pressed", b.dataset.view === view));
+  $("#tripsView").hidden = view !== "trips";
+  $("#mapView").hidden = view !== "map";
+  document.body.classList.toggle("map-mode", view === "map");
+  if (!fromHash) { try { history.replaceState(null, "", view === "map" ? "#map" : location.pathname + location.search); } catch {} }
+  const start = () => {
+    if (!window.LiveMap || !window.L) return setTimeout(start, 100);
+    if (view === "map") {
+      window.LiveMap.setMyLines(myLineNames());
+      const trip = state.trips.find(x => x.id === state.selected);
+      const c = trip ? ends(trip)[0].place.split(",").map(Number) : null;
+      window.LiveMap.show(c);
+    } else window.LiveMap.hide();
+  };
+  start();
+}
+document.querySelectorAll(".tabs [data-view]").forEach(b => b.addEventListener("click", () => setView(b.dataset.view)));
+window.addEventListener("hashchange", () => setView(location.hash === "#map" ? "map" : "trips", true));
+
+// ---------- clock & refresh ----------
+function tick() {
+  $("#clock").textContent = t(new Date().toISOString());
+  if (!state.loading && view === "trips") render();
+}
+setInterval(tick, 15_000);
+setInterval(() => { if (view === "trips" && state.mode === "now" && document.visibilityState === "visible") { load(); loadPreviews(); } }, REFRESH_MS);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (view === "map") return window.LiveMap?.resume();
+  if (state.mode === "now" && (!state.updatedAt || Date.now() - state.updatedAt > 30_000)) { load(); loadPreviews(); }
+});
+
+$("#clock").textContent = t(new Date().toISOString());
+load(); loadPreviews();
+if (location.hash === "#map") setView("map", true);
+
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("../sw.js", { updateViaCache: "none" }).catch(() => {});
+</script>
+</body>
+</html>

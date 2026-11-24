@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Life Hub</title>
+<meta name="description" content="My all-in-one everyday app.">
+<meta name="theme-color" content="#0d0f14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Life Hub">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<script src="hub.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0d0f14; --surface: #161922; --surface-2: #1e2230; --line: #272c3a;
+  --ink: #eef0f5; --muted: #9097a8; --muted-2: #656c7d;
+  --accent: #8b7cff; --accent-ink: #0d0b22; --accent-soft: #231f45;
+  --travel: #5db3e4; --workout: #ff5a5a; --water: #4fc3f7; --food: #7ad97a; --caf: #e0a458; --warn: #ffcf5c; --bad: #ff7b7b; --good: #6fdc8c;
+  --r: 18px;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f3f4f8; --surface: #ffffff; --surface-2: #eef0f5; --line: #dfe2ea;
+    --ink: #121520; --muted: #5d6475; --muted-2: #8a90a0;
+    --accent: #5b47e0; --accent-ink: #ffffff; --accent-soft: #e7e3ff;
+    --travel: #0a6fa8; --workout: #d63333; --water: #0a8fc7; --food: #2f9e44; --caf: #b06d12; --warn: #a87800; --bad: #c92a2a; --good: #2f9e44;
+  }
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.45 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: calc(84px + env(safe-area-inset-bottom));
+}
+a { color: inherit; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.wrap { max-width: 640px; margin: 0 auto; padding: 0 16px; }
+.num { font-variant-numeric: tabular-nums; }
+
+header.top { display: flex; align-items: flex-start; gap: 12px; padding: calc(20px + env(safe-area-inset-top)) 0 16px; }
+header.top .hi { flex: 1; min-width: 0; }
+header.top h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -.02em; }
+header.top .date { color: var(--muted); font-size: 13.5px; font-weight: 600; margin-top: 2px; }
+.iconbtn { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); color: var(--ink); text-decoration: none; }
+.iconbtn svg { width: 19px; height: 19px; }
+
+.card { display: block; text-decoration: none; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 15px 16px; margin-bottom: 12px; position: relative; overflow: hidden; }
+a.card:active, button.card:active { transform: scale(.99); }
+.card .k { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.card .k .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--accent)); }
+.card .k .go { margin-left: auto; color: var(--muted-2); font-size: 16px; letter-spacing: 0; }
+.card .big { font-size: 21px; font-weight: 800; letter-spacing: -.01em; margin-top: 8px; }
+.card .sub { color: var(--muted); font-size: 13.5px; margin-top: 3px; }
+.card .sub b { color: var(--ink); font-weight: 700; }
+.card::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--c, transparent); }
+.late { color: var(--bad); font-weight: 700; }
+.ontime { color: var(--good); font-weight: 700; }
+.skel { display: inline-block; height: 1em; width: 9em; border-radius: 6px; background: var(--surface-2); vertical-align: middle; animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .5; } }
+
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.tile { display: block; text-decoration: none; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px; min-width: 0; }
+.tile .k { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.tile .v { font-size: 19px; font-weight: 800; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .v small { font-size: 12px; font-weight: 600; color: var(--muted); }
+.tile .s { font-size: 11.5px; line-height: 1.35; color: var(--muted); margin-top: 2px; min-height: 2.7em; }
+.bar { height: 6px; border-radius: 99px; background: var(--surface-2); margin-top: 9px; overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: 99px; background: var(--c, var(--accent)); width: 0; transition: width .4s; }
+.bar.over i { background: var(--bad); }
+
+.banner { display: flex; gap: 10px; align-items: center; background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); border-radius: 14px; padding: 11px 13px; font-size: 13.5px; margin-bottom: 12px; }
+.banner b { font-weight: 700; }
+.banner .act { margin-left: auto; font-weight: 700; color: var(--accent); white-space: nowrap; }
+
+.sec { font-size: 13px; font-weight: 700; color: var(--muted); margin: 22px 2px 10px; }
+.apps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.app { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; text-decoration: none; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 13px 12px; min-height: 104px; text-align: left; }
+.app .ic { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); }
+.app .ic svg { width: 21px; height: 21px; }
+.app b { font-size: 14px; font-weight: 700; }
+.app small { display: block; font-size: 11px; color: var(--muted-2); font-weight: 600; margin-top: 1px; }
+.app.soon { opacity: .62; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 4px 16px; margin-bottom: 12px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.row .t { flex: 1; min-width: 0; }
+.row .t b { display: block; font-weight: 600; }
+.row .t small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 14px; border-radius: 11px; font-weight: 700; font-size: 13.5px; background: var(--surface-2); border: 1px solid var(--line); white-space: nowrap; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.danger { color: var(--bad); }
+select, input[type="password"], input[type="text"] { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+input.pin { width: 9em; letter-spacing: .3em; text-align: center; }
+.pinform { display: none; gap: 8px; flex-wrap: wrap; align-items: center; padding: 0 0 13px; }
+.pinform.open { display: flex; }
+.note { color: var(--muted); font-size: 12.5px; margin: 2px 2px 14px; }
+.toast { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-weight: 600; font-size: 13.5px; opacity: 0; transition: .25s; pointer-events: none; z-index: 70; max-width: calc(100% - 32px); }
+.toast.on { opacity: 1; transform: translateX(-50%); }
+
+nav.bottom { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+nav.bottom .in { max-width: 640px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px 8px; }
+nav.bottom a { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 0 6px; border-radius: 12px; text-decoration: none; font-size: 11px; font-weight: 700; color: var(--muted); }
+nav.bottom a svg { width: 22px; height: 22px; }
+nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="hi"><h1 id="greet">Hi</h1><div class="date" id="today-date"></div></div>
+    <button class="iconbtn" id="lockBtn" type="button" aria-label="Lock now" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    </button>
+    <a class="iconbtn" href="#settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </a>
+  </header>
+
+  <!-- TODAY -->
+  <main id="v-today">
+    <div class="banner" id="backupBanner" hidden>
+      <span id="backupText"><b>No backup yet.</b> Save a copy of your data.</span>
+      <a class="act" href="#settings">Back up</a>
+    </div>
+
+    <a class="card" id="c-weather" href="#settings" style="--c:var(--warn)">
+      <div class="k"><span class="dot"></span><span id="w-place">Weather</span><span class="go">›</span></div>
+      <div class="big" id="w-now"><span class="skel"></span></div>
+      <div class="sub" id="w-sub">&nbsp;</div>
+    </a>
+
+    <a class="card" id="c-trip" href="travel/" style="--c:var(--travel)">
+      <div class="k"><span class="dot"></span><span id="t-route">Next trip</span><span class="go">›</span></div>
+      <div class="big num" id="t-main"><span class="skel"></span></div>
+      <div class="sub" id="t-sub">&nbsp;</div>
+    </a>
+
+    <a class="card" id="c-workout" href="workout/" style="--c:var(--workout)">
+      <div class="k"><span class="dot"></span><span>Workout today</span><span class="go">›</span></div>
+      <div class="big" id="wo-main"><span class="skel"></span></div>
+      <div class="sub" id="wo-sub">&nbsp;</div>
+    </a>
+
+    <div class="tiles">
+      <a class="tile" href="workout/" style="--c:var(--water)">
+        <div class="k">Water</div><div class="v num" id="wa-v">–</div><div class="s num" id="wa-s">&nbsp;</div>
+        <div class="bar"><i id="wa-b"></i></div>
+      </a>
+      <a class="tile" href="workout/" style="--c:var(--food)">
+        <div class="k">Protein</div><div class="v num" id="fo-v">–</div><div class="s num" id="fo-s">&nbsp;</div>
+        <div class="bar"><i id="fo-b"></i></div>
+      </a>
+      <a class="tile" href="workout/" style="--c:var(--caf)">
+        <div class="k">Caffeine</div><div class="v num" id="ca-v">–</div><div class="s num" id="ca-s">&nbsp;</div>
+        <div class="bar"><i id="ca-b"></i></div>
+      </a>
+    </div>
+    <p class="note">Water, food and caffeine come from your Workout app. Tap a tile to log more.</p>
+  </main>
+
+  <!-- APPS -->
+  <main id="v-apps" hidden>
+    <div class="sec" style="margin-top:4px">Ready</div>
+    <div class="apps" id="apps-ready"></div>
+    <div class="sec">Coming next</div>
+    <div class="apps" id="apps-soon"></div>
+  </main>
+
+  <!-- SETTINGS -->
+  <main id="v-settings" hidden>
+    <div class="sec" style="margin-top:4px">Privacy lock</div>
+    <div class="panel">
+      <div class="row">
+        <div class="t"><b id="pin-state">PIN lock is off</b><small>Asks for a PIN when you open Life Hub or any of its apps.</small></div>
+        <button class="btn primary" id="pinSet" type="button">Set PIN</button>
+      </div>
+      <form class="pinform" id="pinForm" autocomplete="off">
+        <input class="pin" id="pin1" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="New PIN" aria-label="New PIN, 4 to 6 digits">
+        <input class="pin" id="pin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="Repeat" aria-label="Repeat PIN">
+        <button class="btn primary" type="submit">Save</button>
+        <button class="btn" type="button" id="pinCancel">Cancel</button>
+      </form>
+      <div class="row" id="pinAfterRow" hidden>
+        <div class="t"><b>Lock again after</b><small>Time away from the app before the PIN is asked again.</small></div>
+        <select id="pinAfter" aria-label="Lock again after">
+          <option value="0">Immediately</option><option value="60">1 minute</option><option value="300">5 minutes</option><option value="900">15 minutes</option><option value="3600">1 hour</option>
+        </select>
+      </div>
+      <div class="row" id="pinOffRow" hidden>
+        <div class="t"><b>Turn PIN lock off</b></div>
+        <button class="btn danger" id="pinOff" type="button">Turn off</button>
+      </div>
+    </div>
+    <p class="note">The PIN keeps other people out of the app on your phone. It does not encrypt your data.</p>
+
+    <div class="sec">Backup</div>
+    <div class="panel">
+      <div class="row">
+        <div class="t"><b>Download backup file</b><small id="bk-last">Everything from every app in one file.</small></div>
+        <button class="btn primary" id="bkSave" type="button">Download</button>
+      </div>
+      <div class="row">
+        <div class="t"><b>Restore from a backup file</b><small>Replaces what's on this phone with the file.</small></div>
+        <label class="btn" for="bkFile">Choose file</label>
+        <input id="bkFile" type="file" accept="application/json,.json" hidden>
+      </div>
+    </div>
+    <p class="note">Your workouts also sync to the cloud when you're logged in to the Workout app (You tab). Cloud sync for the other apps comes with the next modules. The backup file leaves out your login and AI key.</p>
+
+    <div class="sec">Weather</div>
+    <div class="panel">
+      <div class="row">
+        <div class="t"><b>Location</b><small id="w-loc">Middelharnis</small></div>
+        <button class="btn" id="wHere" type="button">Use my location</button>
+      </div>
+      <div class="row" id="wResetRow" hidden>
+        <div class="t"><b>Back to Middelharnis</b></div>
+        <button class="btn" id="wReset" type="button">Reset</button>
+      </div>
+    </div>
+
+    <div class="sec">Look</div>
+    <div class="panel">
+      <div class="row">
+        <div class="t"><b>Theme</b></div>
+        <select id="theme" aria-label="Theme"><option value="">Same as phone</option><option value="dark">Dark</option><option value="light">Light</option></select>
+      </div>
+    </div>
+    <p class="note">Weather from Open-Meteo · trips from Transitous (OpenOV). Life Hub v1.</p>
+  </main>
+</div>
+
+<nav class="bottom" aria-label="Main">
+  <div class="in">
+    <a href="#today" data-v="today">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/></svg>Today</a>
+    <a href="travel/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 17V7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v10M6 13h12M8.5 20.5l1-3M15.5 20.5l-1-3"/><circle cx="9" cy="16" r=".6" fill="currentColor"/><circle cx="15" cy="16" r=".6" fill="currentColor"/></svg>Travel</a>
+    <a href="workout/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>Workout</a>
+    <a href="#apps" data-v="apps">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.8"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.8"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.8"/></svg>Apps</a>
+  </div>
+</nav>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+/* ============================================================
+   Life Hub — Today screen, app list, settings.
+   It reads the other apps' saved data (same website = same storage):
+     traveler.*  from travel/     wl_*  from workout/
+   Its own settings are saved as hub.*
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const get = (k, d) => { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } };
+const set = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const pad = n => String(n).padStart(2, '0');
+const ymd = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
+const clamp01 = x => Math.max(0, Math.min(1, x));
+function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 2600); }
+
+/* ---------- theme ---------- */
+function applyTheme() { const t = get('hub.theme', ''); if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }
+applyTheme();
+
+/* ---------- views ---------- */
+function route() {
+  const v = (location.hash.slice(1) || 'today');
+  const view = ['today', 'apps', 'settings'].includes(v) ? v : 'today';
+  for (const id of ['today', 'apps', 'settings']) $('#v-' + id).hidden = id !== view;
+  document.querySelectorAll('nav.bottom a[data-v]').forEach(a => { if (a.dataset.v === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+  const titles = { apps: 'All apps', settings: 'Settings' };
+  if (view === 'today') greet(); else { $('#greet').textContent = titles[view]; $('#today-date').textContent = ''; }
+  if (view === 'settings') drawSettings();
+  window.scrollTo(0, 0);
+}
+addEventListener('hashchange', route);
+
+function greet() {
+  const h = new Date().getHours();
+  const prof = get('wl_prof', {}) || {};
+  const name = (prof.name || '').split(' ')[0];
+  $('#greet').textContent = (h < 6 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening') + (name ? ', ' + name : '');
+  $('#today-date').textContent = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date());
+}
+
+/* ---------- weather (Open-Meteo, free, no key) ---------- */
+const HOME_PLACE = { name: 'Middelharnis', lat: 51.7554, lon: 4.1609 };
+const WMO = { 0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Cloudy', 45: 'Fog', 48: 'Fog', 51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle',
+  56: 'Freezing drizzle', 57: 'Freezing drizzle', 61: 'Light rain', 63: 'Rain', 65: 'Heavy rain', 66: 'Freezing rain', 67: 'Freezing rain',
+  71: 'Light snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow grains', 80: 'Rain showers', 81: 'Rain showers', 82: 'Heavy showers',
+  85: 'Snow showers', 86: 'Snow showers', 95: 'Thunderstorm', 96: 'Thunderstorm with hail', 99: 'Thunderstorm with hail' };
+async function loadWeather() {
+  const p = get('hub.place', null) || HOME_PLACE;
+  $('#w-place').textContent = 'Weather · ' + p.name;
+  try {
+    const q = new URLSearchParams({ latitude: p.lat, longitude: p.lon, current: 'temperature_2m,apparent_temperature,weather_code,wind_speed_10m',
+      hourly: 'precipitation_probability,precipitation', daily: 'temperature_2m_max,temperature_2m_min', timezone: 'auto', forecast_days: 2 });
+    const r = await fetch('https://api.open-meteo.com/v1/forecast?' + q);
+    if (!r.ok) throw new Error(r.status);
+    const w = await r.json();
+    const c = w.current;
+    $('#w-now').innerHTML = `${Math.round(c.temperature_2m)}° <span style="font-weight:600;font-size:16px;color:var(--muted)">${esc(WMO[c.weather_code] || '')}</span>`;
+    const now = Date.now(), H = w.hourly;
+    let rain = null;
+    for (let i = 0; i < H.time.length; i++) {
+      const t = new Date(H.time[i]).getTime();
+      if (t < now - 36e5 || t > now + 12 * 36e5) continue;
+      if (H.precipitation_probability[i] >= 50 && H.precipitation[i] >= 0.2) { rain = { t: new Date(t), p: H.precipitation_probability[i] }; break; }
+    }
+    const lo = Math.round(w.daily.temperature_2m_min[0]), hi = Math.round(w.daily.temperature_2m_max[0]);
+    const rainTxt = rain ? (rain.t.getTime() <= now ? `<b>Raining now</b>` : `<b>Rain likely around ${hm(rain.t)}</b> (${rain.p}%)`) : 'No rain expected in the next 12 hours';
+    $('#w-sub').innerHTML = `${rainTxt} · ${lo}° to ${hi}° · feels ${Math.round(c.apparent_temperature)}°`;
+  } catch (e) {
+    $('#w-now').textContent = 'Weather unavailable';
+    $('#w-sub').textContent = navigator.onLine ? 'Couldn’t reach the weather service.' : 'You’re offline.';
+  }
+}
+
+/* ---------- next trip (same saved trips and rules as Traveler) ---------- */
+const TRIPS_DEFAULT = [
+  { id: 'mh-glr', a: { short: 'Middelharnis', place: '51.7554,4.160899' }, b: { short: 'Grafisch Lyceum', place: '51.9275955,4.478099' } },
+  { id: 'ot-glr', a: { short: 'Oude-Tonge', place: '51.695873,4.2125177' }, b: { short: 'Grafisch Lyceum', place: '51.9275955,4.478099' } },
+];
+const MODE = { BUS: 'Bus', TRAM: 'Tram', SUBWAY: 'Metro', METRO: 'Metro', RAIL: 'Train', REGIONAL_RAIL: 'Train', HIGHSPEED_RAIL: 'Train', LONG_DISTANCE: 'Train', COACH: 'Bus', FERRY: 'Ferry' };
+function mins(ms) { return Math.round(ms / 60000); }
+function untilText(ms) { const m = mins(ms); if (m <= 0) return 'now'; if (m < 60) return `in ${m} min`; return `in ${Math.floor(m / 60)} h ${pad(m % 60)}`; }
+async function loadTrip() {
+  const trips = get('traveler.trips', TRIPS_DEFAULT) || TRIPS_DEFAULT;
+  const trip = trips.find(t => t.id === get('traveler.selected', 'mh-glr')) || trips[0];
+  if (!trip) { $('#t-main').textContent = 'No saved trips'; $('#t-sub').textContent = 'Add one in Travel.'; return; }
+  const back = new Date().getHours() >= 13;          /* same rule as Traveler: after 13:00 you're going home */
+  const [from, to] = back ? [trip.b, trip.a] : [trip.a, trip.b];
+  $('#t-route').textContent = `${from.short || from.name} → ${to.short || to.name}`;
+  try {
+    const q = new URLSearchParams({ fromPlace: from.place, toPlace: to.place, time: new Date().toISOString() });
+    const r = await fetch('https://api.transitous.org/api/v5/plan?' + q);
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    const its = (data.itineraries || []).filter(it => new Date(it.startTime).getTime() > Date.now() - 60000);
+    const it = its[0];
+    if (!it) { $('#t-main').textContent = 'No connections found'; $('#t-sub').textContent = 'Open Travel for other times.'; return; }
+    const rides = it.legs.filter(l => !['WALK', 'BIKE', 'CAR'].includes(l.mode));
+    const r1 = rides[0];
+    const leave = new Date(it.startTime), arrive = new Date(it.endTime);
+    const cancelled = it.legs.some(l => l.cancelled);
+    let delay = 0;
+    if (r1 && r1.from.departure && r1.from.scheduledDeparture) delay = mins(new Date(r1.from.departure) - new Date(r1.from.scheduledDeparture));
+    const line = r1 ? `${MODE[r1.mode] || 'Ride'} ${esc(r1.routeShortName || r1.displayName || '')}` : 'Walk';
+    $('#t-main').innerHTML = `Leave ${hm(leave)} <span style="font-weight:600;font-size:16px;color:var(--muted)">· ${untilText(leave - Date.now())}</span>`;
+    const status = cancelled ? '<span class="late">Cancelled</span>' : delay > 0 ? `<span class="late">+${delay} min late</span>` : r1 && r1.realTime ? '<span class="ontime">On time</span>' : 'Timetable';
+    const next = its[1] ? ` · then ${hm(new Date(its[1].startTime))}` : '';
+    $('#t-sub').innerHTML = `${line} · ${status} · arrive ${hm(arrive)}${next}`;
+  } catch (e) {
+    $('#t-main').textContent = 'Times unavailable';
+    $('#t-sub').textContent = navigator.onLine ? 'Couldn’t reach the journey planner.' : 'You’re offline.';
+  }
+}
+
+/* ---------- workout data (read from the Workout app) ---------- */
+function wl() {
+  return {
+    days: get('wl_days', []) || [], routines: get('wl_rt', []) || [], sessions: get('wl_ses', []) || [],
+    meals: get('wl_meals', []) || [], water: get('wl_water', []) || [], weights: get('wl_wt', []) || [],
+    skips: get('wl_skips', []) || [], prof: get('wl_prof', {}) || {},
+  };
+}
+function plannedFor(W, d) {
+  const day = W.days.find(x => x.date === d);
+  if (day) return day;
+  const wd = new Date(d + 'T12:00').getDay();
+  const list = W.routines.filter(r => (r.weekday | 0) === wd && (!r.effectiveFrom || String(r.effectiveFrom) <= d))
+    .sort((a, b) => String(a.effectiveFrom || '') < String(b.effectiveFrom || '') ? 1 : -1);
+  return list[0] || null;
+}
+function bodyKg(W) {
+  const ws = W.weights.filter(w => num(w.kg) > 0).sort((a, b) => String(a.date) < String(b.date) ? -1 : 1);
+  return ws.length ? num(ws[ws.length - 1].kg) : num(W.prof.weightKg);
+}
+function drawWorkout() {
+  const W = wl(), d = ymd();
+  const active = W.sessions.filter(s => !s.finishedAt).sort((a, b) => b.startedAt - a.startedAt)[0];
+  const done = W.sessions.filter(s => s.finishedAt && ymd(new Date(s.finishedAt)) === d).sort((a, b) => b.finishedAt - a.finishedAt)[0];
+  const plan = plannedFor(W, d), skip = W.skips.find(x => x.date === d);
+  const nEx = plan ? (plan.exercises || []).length : 0;
+  let main, sub;
+  if (!W.sessions.length && !W.routines.length && !W.days.length) { main = 'Set up your plan'; sub = 'Open Workout to build your week.'; }
+  else if (active) { main = `${esc(active.dayName || 'Workout')} in progress`; sub = `Started ${hm(new Date(active.startedAt))} · tap to continue`; }
+  else if (done) {
+    const sets = (done.ex || []).reduce((n, e) => n + ((e.sets || e.log || []).length || 0), 0);
+    main = `${esc(done.dayName || 'Workout')} done ✓`; sub = `Finished ${hm(new Date(done.finishedAt))}${sets ? ` · ${sets} sets` : ''}${(done.ex || []).length ? ` · ${(done.ex || []).length} exercises` : ''}`;
+  }
+  else if (skip) { main = 'Skipped today'; sub = esc(skip.reason || skip.note || 'Rest up and go next time.'); }
+  else if (plan && nEx) { main = esc(plan.name || 'Workout'); sub = `${nEx} exercise${nEx === 1 ? '' : 's'} · ` + (plan.exercises || []).slice(0, 3).map(e => esc(e.name)).join(', ') + (nEx > 3 ? '…' : ''); }
+  else {
+    main = 'Rest day';
+    let next = null;
+    for (let i = 1; i < 14 && !next; i++) { const dd = new Date(); dd.setDate(dd.getDate() + i); const p = plannedFor(W, ymd(dd)); if (p && (p.exercises || []).length) next = { p, dd }; }
+    sub = next ? `Next: <b>${esc(next.p.name || 'Workout')}</b> on ${new Intl.DateTimeFormat('en-GB', { weekday: 'long' }).format(next.dd)}` : 'Nothing planned.';
+  }
+  $('#wo-main').innerHTML = main; $('#wo-sub').innerHTML = sub;
+
+  /* water: same goal as the Workout app (35 ml per kg, +500 ml on training days) */
+  const wat = W.water.find(w => w.date === d) || { ml: 0, caf: [] };
+  const kg = bodyKg(W);
+  let goal = num(W.prof.waterGoal) || (kg ? Math.round(kg * 35 / 250) * 250 : 2500);
+  if (active || done || (plan && nEx && !skip)) goal += 500;
+  const ml = num(wat.ml);
+  $('#wa-v').innerHTML = `${(ml / 1000).toFixed(1)}<small> L</small>`;
+  $('#wa-s').textContent = ml >= goal ? 'Goal reached' : `${((goal - ml) / 1000).toFixed(1)} L to go`;
+  $('#wa-b').style.width = clamp01(ml / goal) * 100 + '%';
+
+  /* food */
+  const meals = W.meals.filter(m => m.date === d);
+  const prot = Math.round(meals.reduce((s, m) => s + num(m.protein), 0));
+  const kcal = Math.round(meals.reduce((s, m) => s + num(m.kcal), 0));
+  const pg = num(W.prof.proteinGoal), cg = num(W.prof.calGoal);
+  $('#fo-v').innerHTML = `${prot}<small> g</small>`;
+  $('#fo-s').textContent = pg ? (prot >= pg ? `Goal hit · ${kcal} kcal` : `${pg - prot} g to go · ${kcal} kcal`) : `${kcal}${cg ? ' / ' + cg : ''} kcal`;
+  $('#fo-b').style.width = (pg ? clamp01(prot / pg) : cg ? clamp01(kcal / cg) : 0) * 100 + '%';
+
+  /* caffeine: same half-life (5 h) and limits as the Workout app */
+  const caf = (wat.caf || []);
+  const total = Math.round(caf.reduce((s, x) => s + num(x[1]), 0));
+  const age = num(W.prof.age);
+  const limit = age && age < 18 ? (kg ? Math.round(kg * 3 / 10) * 10 : 200) : 400;
+  const yest = (() => { const y = new Date(); y.setDate(y.getDate() - 1); return (W.water.find(w => w.date === ymd(y)) || {}).caf || []; })();
+  const bed = (() => { const b = /^\d{1,2}:\d\d$/.test(W.prof.bedtime || '') ? W.prof.bedtime : '23:00'; const [h, m] = b.split(':'); const t = new Date(); t.setHours(+h, +m, 0, 0); if (t < Date.now() - 3 * 36e5) t.setDate(t.getDate() + 1); return t.getTime(); })();
+  const left = Math.round(caf.concat(yest).reduce((s, x) => { const h = (bed - x[0]) / 36e5; return h < 0 ? s : s + num(x[1]) * Math.pow(.5, h / 5); }, 0));
+  $('#ca-v').innerHTML = `${total}<small> mg</small>`;
+  $('#ca-s').textContent = total ? `${left} mg at bedtime` : `limit ${limit} mg`;
+  $('#ca-b').style.width = clamp01(total / limit) * 100 + '%';
+  $('#ca-b').parentElement.classList.toggle('over', total > limit);
+}
+
+/* ---------- backup reminder ---------- */
+function drawBackupBanner() {
+  const last = get('hub.lastBackup', 0);
+  const hasData = Object.keys(localStorage).some(k => /^(wl_|traveler\.)/.test(k));
+  const old = Date.now() - last > 7 * 864e5;
+  $('#backupBanner').hidden = !(hasData && old);
+  if (last) $('#backupText').innerHTML = `<b>Last backup ${Math.floor((Date.now() - last) / 864e5)} days ago.</b> Save a fresh copy.`;
+}
+
+/* ---------- apps ---------- */
+const ICON = {
+  travel: '<path d="M6 17V7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v10M6 13h12M8.5 20.5l1-3M15.5 20.5l-1-3"/>',
+  workout: '<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>',
+  todo: '<path d="M9 11l2.5 2.5L16 9"/><rect x="4" y="4" width="16" height="16" rx="4"/>',
+  school: '<path d="M2.5 9 12 4.5 21.5 9 12 13.5z"/><path d="M6.5 11v5c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3v-5"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+  habits: '<path d="M12 3c2.5 3 5 5.4 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.3 1.6 1 2.5 2 3 0-2.5.2-5 1-7.5z"/>',
+  sleep: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  water: '<path d="M12 3.5s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
+  food: '<path d="M7 3v8a2 2 0 0 0 2 2v8M11 3v8a2 2 0 0 1-2 2M17 21V3c-2 1.5-3 4-3 7v4h3"/>',
+  money: '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10.5h18M7 15h3"/>',
+  shopping: '<path d="M5 7h14l-1.3 10.2a2 2 0 0 1-2 1.8H8.3a2 2 0 0 1-2-1.8z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/>',
+  notes: '<path d="M6 3.5h9l4 4V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20z"/><path d="M14.5 3.5V8h4.5M9 12h6M9 16h6"/>',
+  countdown: '<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 2.5h5"/>',
+  ai: '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM18.5 15l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/>',
+};
+const APPS = [
+  { id: 'travel', name: 'Travel', sub: 'Live trips & map', c: 'var(--travel)', href: 'travel/' },
+  { id: 'workout', name: 'Workout', sub: 'Gym, food, water', c: 'var(--workout)', href: 'workout/' },
+  { id: 'todo', name: 'To-do', sub: 'Tasks & reminders', c: '#8b7cff' },
+  { id: 'school', name: 'School', sub: 'Timetable & homework', c: '#f2994a' },
+  { id: 'calendar', name: 'Calendar', sub: 'Everything by day', c: '#56ccf2' },
+  { id: 'habits', name: 'Habits', sub: 'Streaks', c: '#f25f8a' },
+  { id: 'sleep', name: 'Sleep', sub: 'Bedtime & debt', c: '#9b8cff' },
+  { id: 'countdown', name: 'Countdowns', sub: 'Exams, holidays', c: '#ffcf5c' },
+  { id: 'shopping', name: 'Shopping', sub: 'Groceries & wishlist', c: '#6fdc8c' },
+  { id: 'money', name: 'Money', sub: 'Budget & savings', c: '#3ecf9a' },
+  { id: 'notes', name: 'Notes', sub: 'Notes & journal', c: '#c9b37e' },
+  { id: 'ai', name: 'Assistant', sub: 'AI for everything', c: '#b48cff' },
+];
+function drawApps() {
+  const tile = a => `${a.href ? `<a class="app" href="${a.href}"` : `<button class="app soon" type="button" data-soon="${a.name}"`} style="--c:${a.c}">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON[a.id]}</svg></span>
+      <span><b>${a.name}</b><small>${a.href ? a.sub : 'Coming soon'}</small></span>${a.href ? '</a>' : '</button>'}`;
+  $('#apps-ready').innerHTML = APPS.filter(a => a.href).map(tile).join('');
+  $('#apps-soon').innerHTML = APPS.filter(a => !a.href).map(tile).join('');
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-soon]'); if (b) toast(`${b.dataset.soon} is coming in a next update.`); });
+
+/* ---------- settings ---------- */
+function drawSettings() {
+  const on = Hub.hasPin();
+  $('#pin-state').textContent = on ? 'PIN lock is on' : 'PIN lock is off';
+  $('#pinSet').textContent = on ? 'Change PIN' : 'Set PIN';
+  $('#pinAfterRow').hidden = $('#pinOffRow').hidden = !on;
+  $('#pinAfter').value = String(Hub.lockAfter());
+  $('#lockBtn').hidden = !on;
+  const p = get('hub.place', null);
+  $('#w-loc').textContent = p ? p.name : HOME_PLACE.name;
+  $('#wResetRow').hidden = !p;
+  $('#theme').value = get('hub.theme', '');
+  const last = get('hub.lastBackup', 0);
+  $('#bk-last').textContent = last ? `Last backup: ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(last)}` : 'Everything from every app in one file. No backup made yet.';
+}
+async function askPin(why) {
+  if (!Hub.hasPin()) return true;
+  const pin = prompt(why + '\nEnter your current PIN:');
+  if (pin == null) return false;
+  if (await Hub.checkPin(pin)) return true;
+  toast('Wrong PIN'); return false;
+}
+$('#pinSet').onclick = () => { $('#pinForm').classList.toggle('open'); $('#pin1').focus(); };
+$('#pinCancel').onclick = () => { $('#pinForm').classList.remove('open'); $('#pinForm').reset(); };
+$('#pinForm').onsubmit = async e => {
+  e.preventDefault();
+  const a = $('#pin1').value, b = $('#pin2').value;
+  if (!/^\d{4,6}$/.test(a)) return toast('Use 4 to 6 digits');
+  if (a !== b) return toast('The two PINs don’t match');
+  if (!(await askPin('Changing your PIN.'))) return;
+  await Hub.setPin(a, Hub.hasPin() ? Hub.lockAfter() : 60);
+  $('#pinForm').reset(); $('#pinForm').classList.remove('open');
+  drawSettings(); toast('PIN saved. Life Hub will ask for it when you come back.');
+};
+$('#pinAfter').onchange = e => { Hub.setLockAfter(+e.target.value); toast('Saved'); };
+$('#pinOff').onclick = async () => { if (!(await askPin('Turning the PIN lock off.'))) return; Hub.clearPin(); drawSettings(); toast('PIN lock is off'); };
+$('#lockBtn').onclick = () => Hub.lockNow();
+
+/* backup: every app's data on this website, minus logins and keys */
+const SKIP = /^(wl_auth|wl_aikey|wl_sync_|wl_mvundo|hub\.lock|hub\.unlocked|hub\.hiddenAt)/;
+$('#bkSave').onclick = () => {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (/^(wl_|traveler\.|hub\.)/.test(k) && !SKIP.test(k)) data[k] = localStorage.getItem(k);
+  }
+  const file = { app: 'life-hub', version: 1, savedAt: new Date().toISOString(), data };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
+  const a = document.createElement('a'); a.href = url; a.download = `life-hub-backup-${ymd()}.json`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  set('hub.lastBackup', Date.now()); try { localStorage.setItem('wl_lastbackup', String(Date.now())); } catch {}
+  drawSettings(); drawBackupBanner(); toast('Backup downloaded. Keep it somewhere safe, like Google Drive.');
+};
+$('#bkFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const file = JSON.parse(await f.text());
+    if (file.app !== 'life-hub' || !file.data) throw new Error('not a Life Hub backup');
+    const n = Object.keys(file.data).length;
+    if (!confirm(`Restore ${n} saved items from ${new Date(file.savedAt).toLocaleString('en-GB')}?\nThis replaces the same data on this phone.`)) return;
+    for (const [k, v] of Object.entries(file.data)) if (/^(wl_|traveler\.|hub\.)/.test(k) && !SKIP.test(k)) localStorage.setItem(k, v);
+    toast('Restored. Reloading…'); setTimeout(() => location.reload(), 900);
+  } catch (err) { toast('That file isn’t a Life Hub backup.'); }
+};
+
+/* weather location */
+$('#wHere').onclick = () => {
+  if (!navigator.geolocation) return toast('Location isn’t available on this device');
+  $('#wHere').textContent = 'Finding…';
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lat = +pos.coords.latitude.toFixed(3), lon = +pos.coords.longitude.toFixed(3);
+    const name = 'My location';
+    set('hub.place', { name, lat, lon }); $('#wHere').textContent = 'Use my location'; drawSettings(); loadWeather(); toast('Weather location set');
+  }, () => { $('#wHere').textContent = 'Use my location'; toast('Location permission was blocked'); }, { timeout: 15000, maximumAge: 6e5 });
+};
+$('#wReset').onclick = () => { localStorage.removeItem('hub.place'); drawSettings(); loadWeather(); };
+$('#theme').onchange = e => { set('hub.theme', e.target.value); applyTheme(); };
+
+/* ---------- start ---------- */
+function refreshAll() { greet(); drawWorkout(); drawBackupBanner(); loadTrip(); loadWeather(); }
+drawApps(); route(); refreshAll(); drawSettings();
+setInterval(() => { if (document.visibilityState === 'visible') { loadTrip(); drawWorkout(); } }, 60000);
+setInterval(() => { if (document.visibilityState === 'visible') loadWeather(); }, 15 * 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshAll(); });
+addEventListener('storage', drawWorkout);
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
+</script>
+</body>
+</html>
