@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calendar · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .mhead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .mhead h2 { flex: 1; margin: 0; font-size: 18px; font-weight: 800; }
+  .month { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 8px; margin-bottom: 14px; }
+  .month .wd { text-align: center; font-size: 11px; font-weight: 800; color: var(--muted-2); padding-bottom: 4px; }
+  .month .d { aspect-ratio: 1 / 1.05; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 6px; gap: 4px; font-weight: 600; font-size: 14px; position: relative; }
+  .month .d.other { color: var(--muted-2); opacity: .55; }
+  .month .d.today { color: var(--c); font-weight: 800; }
+  .month .d.today::after { content: ""; position: absolute; inset: 2px; border: 2px solid var(--c); border-radius: 10px; pointer-events: none; }
+  .month .d.sel { background: var(--c); color: #0d0f14; }
+  .month .d.hol { background: color-mix(in srgb, var(--good) 10%, transparent); }
+  .month .d.sel.hol { background: var(--c); }
+  .dots { display: flex; gap: 3px; height: 6px; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--dot); }
+  .month .d.sel .dots i { background: #0d0f14; opacity: .7; }
+  .ag .time { width: 52px; flex: none; font-size: 13px; font-weight: 700; line-height: 1.25; }
+  .ag .time small { display: block; color: var(--muted-2); font-weight: 600; }
+  .kind { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+</style>
+</head>
+<body style="--c:#56ccf2">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="New event"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+let sel = /^\d{4}-\d\d-\d\d$/.test(location.hash.slice(1)) ? location.hash.slice(1) : K.ymd();
+let month = sel.slice(0, 7);
+let mode = K.get('cal.mode', 'month');
+let showLessons = K.get('cal.lessons', true);
+
+function render() {
+  const btn = `<button class="iconbtn" type="button" data-act="today" aria-label="Go to today" title="Today" style="font-weight:800;font-size:13px">${new Date().getDate()}</button>`;
+  let html = K.header('Calendar', 'calendar', btn) + `<div class="tabs">
+    <button type="button" data-mode="month" aria-pressed="${mode === 'month'}">Month</button>
+    <button type="button" data-mode="list" aria-pressed="${mode === 'list'}">Next 30 days</button>
+    <button type="button" data-act="lessons" aria-pressed="${showLessons}">Lessons</button></div>`;
+  html += mode === 'month' ? monthHtml() + dayHtml(sel, true) : listHtml();
+  K.$('#app').innerHTML = html;
+}
+
+function monthHtml() {
+  const [y, m] = month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1), start = K.addDays(K.ymd(first), -((first.getDay() + 6) % 7));
+  const today = K.ymd();
+  let cells = '';
+  for (let i = 0; i < 42; i++) {
+    const s = K.addDays(start, i), d = K.fromYmd(s);
+    if (i === 35 && d.getMonth() !== m - 1) break;
+    const items = K.agenda(s, { lessons: false, done: true }).filter(x => x.kind !== 'holiday');
+    const kinds = [...new Map(items.map(x => [x.color, x])).values()].slice(0, 3);
+    cells += `<button type="button" class="d ${d.getMonth() !== m - 1 ? 'other' : ''} ${s === today ? 'today' : ''} ${s === sel ? 'sel' : ''} ${K.isHoliday(s) ? 'hol' : ''}" data-day="${s}" aria-label="${K.fmtDay(s, true)}${items.length ? ', ' + K.plural(items.length, 'item') : ''}">
+      <span>${d.getDate()}</span><span class="dots">${kinds.map(x => `<i style="--dot:${x.color}"></i>`).join('')}</span></button>`;
+  }
+  return `<div class="mhead"><button class="iconbtn" type="button" data-act="prev" aria-label="Previous month">${svg('left')}</button>
+    <h2>${K.MONTHS[m - 1]} ${y}</h2><button class="iconbtn" type="button" data-act="next" aria-label="Next month">${svg('right')}</button></div>
+    <div class="month">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => `<div class="wd">${w[0]}</div>`).join('')}${cells}</div>`;
+}
+
+const KIND = { event: 'Event', lesson: 'Lesson', homework: 'Homework', test: 'Test', task: 'To-do', countdown: 'Countdown', workout: 'Workout', holiday: 'Holiday' };
+function dayHtml(s, withEmpty) {
+  const items = K.agenda(s, { lessons: showLessons, done: true });
+  let html = `<div class="sec">${esc(K.fmtDay(s, true))}<button class="act" type="button" data-act="addOn" data-on="${s}">+ Event</button></div>`;
+  if (!items.length) return withEmpty ? html + `<div class="empty" style="padding:18px"><b>Nothing planned</b>Tap + to add an event or a birthday.</div>` : '';
+  return html + `<div class="list ag">${items.map(x => `
+    <button class="item ${x.done ? 'done' : ''}" type="button" ${x.kind === 'event' ? `data-ev="${x.id}"` : `data-href="${esc(x.href)}"`} style="width:100%;--dot:${x.color}">
+      <span class="time num">${x.time ? x.time + (x.end ? `<small>${x.end}</small>` : '') : '<small>all day</small>'}</span>
+      <span class="bar"></span>
+      <span class="body"><span class="title">${x.done ? '✓ ' : ''}${esc(x.title)}</span>
+      <span class="meta"><span class="kind" style="color:${x.color}">${KIND[x.kind] || ''}</span>${x.sub && x.sub !== KIND[x.kind] && x.sub !== 'Workout done' ? `<span>${esc(x.sub)}</span>` : ''}</span></span></button>`).join('')}</div>`;
+}
+function listHtml() {
+  let html = '', any = false;
+  for (let i = 0; i < 30; i++) {
+    const s = K.addDays(K.ymd(), i);
+    const part = dayHtml(s, false);
+    if (part) { html += part; any = true; }
+  }
+  return any ? html : `<div class="empty"><b>Nothing in the next 30 days</b>Tap + to add an event.</div>`;
+}
+
+const REMIND = [['', 'No reminder'], ['0', 'At the start'], ['10', '10 min before'], ['30', '30 min before'], ['60', '1 hour before'], ['1440', '1 day before']];
+function editEvent(ev, date) {
+  const isNew = !ev;
+  ev = ev || { id: K.uid(), title: '', date: date || sel, start: '', end: '', repeat: '', color: '#56ccf2', remind: '', place: '', notes: '', birthday: false };
+  const form = K.form({
+    title: isNew ? 'New event' : 'Edit event',
+    fields: [
+      { k: 'title', label: 'What', value: ev.title, required: true, placeholder: 'e.g. Dentist, Lisa’s birthday' },
+      { k: 'birthday', label: '🎂 It’s a birthday (repeats every year)', type: 'checkbox', value: ev.birthday },
+      { k: 'date', label: 'Date', type: 'date', value: ev.date, required: true },
+      { k: 'start', label: 'Starts', type: 'time', value: ev.start, half: true, hint: 'Empty = all day' },
+      { k: 'end', label: 'Ends', type: 'time', value: ev.end, half: true },
+      { k: 'repeat', label: 'Repeat', type: 'select', value: ev.repeat, options: K.REPEATS, half: true },
+      { k: 'remind', label: 'Reminder', type: 'select', value: ev.remind ?? '', options: REMIND, half: true },
+      { k: 'place', label: 'Where', value: ev.place },
+      K.colorField('color', ev.color),
+      { k: 'notes', label: 'Notes', type: 'textarea', value: ev.notes, attrs: 'rows="2" style="min-height:60px"' },
+    ],
+    change(v, f) { if (v.birthday) f.elements.repeat.value = 'yearly'; },
+    save(v) {
+      if (v.start && v.end && v.end <= v.start) { K.toast('The end is before the start'); return false; }
+      Object.assign(ev, v); if (ev.birthday) { ev.repeat = 'yearly'; if (!ev.start && ev.remind === '') ev.remind = '0'; }
+      K.events.upsert(ev);
+      if (ev.remind !== '' && !K.notifyOn()) K.askNotify();
+      sel = ev.date; month = sel.slice(0, 7); render();
+    },
+    del: isNew ? null : () => { K.events.remove(ev.id); render(); K.toast('Event deleted', () => { K.events.upsert(ev); render(); }); },
+  });
+  return form;
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const d = b.dataset;
+  if (d.day) { sel = d.day; if (sel.slice(0, 7) !== month) month = sel.slice(0, 7); history.replaceState(null, '', '#' + sel); render(); }
+  else if (d.mode) { mode = d.mode; K.put('cal.mode', mode); render(); }
+  else if (d.ev) editEvent(K.events.byId(d.ev));
+  else if (d.href) location.href = d.href;
+  else if (d.act === 'prev' || d.act === 'next') { const [y, m] = month.split('-').map(Number); const x = new Date(y, m - 1 + (d.act === 'next' ? 1 : -1), 1); month = K.ymd(x).slice(0, 7); render(); }
+  else if (d.act === 'today') { sel = K.ymd(); month = sel.slice(0, 7); mode = 'month'; render(); }
+  else if (d.act === 'lessons') { showLessons = !showLessons; K.put('cal.lessons', showLessons); render(); }
+  else if (d.act === 'addOn') editEvent(null, d.on);
+  else if (b.id === 'fab') editEvent(null, sel);
+});
+/* swipe left/right on the month to change month */
+let sx = null;
+document.addEventListener('touchstart', e => { if (e.target.closest('.month')) sx = e.touches[0].clientX; }, { passive: true });
+document.addEventListener('touchend', e => {
+  if (sx == null) return; const dx = e.changedTouches[0].clientX - sx; sx = null;
+  if (Math.abs(dx) > 60) { const [y, m] = month.split('-').map(Number); month = K.ymd(new Date(y, m - 1 + (dx < 0 ? 1 : -1), 1)).slice(0, 7); render(); }
+});
+K.$('#fab').innerHTML = svg('plus');
+render();
+</script>
+</body>
+</html>

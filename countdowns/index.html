@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Countdowns · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .cd { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; background: linear-gradient(135deg, color-mix(in srgb, var(--cc) 22%, var(--surface)), var(--surface) 75%); border: 1px solid color-mix(in srgb, var(--cc) 35%, var(--line)); border-radius: var(--r); padding: 16px; margin-bottom: 10px; }
+  .cd .emo { font-size: 34px; width: 52px; text-align: center; flex: none; }
+  .cd .body { flex: 1; min-width: 0; }
+  .cd .t { font-weight: 800; font-size: 16.5px; }
+  .cd .d { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .cd .n { text-align: right; flex: none; }
+  .cd .n b { display: block; font-size: 32px; font-weight: 800; line-height: 1; color: var(--cc); }
+  .cd .n small { font-size: 11px; font-weight: 800; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; }
+  .cd.big { padding: 22px 18px; }
+  .cd.big .n b { font-size: 48px; }
+  .cd.past { opacity: .55; }
+  .live { font-size: 12.5px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body style="--c:#ffcf5c">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="New countdown"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+const C = K.countdowns;
+const IDEAS = [['🎄', 'Christmas', '12-25', true], ['🎆', 'New Year', '01-01', true], ['🌷', 'May holiday', '', false], ['☀️', 'Summer holiday', '', false], ['📝', 'Exams start', '', false], ['🎂', 'My birthday', '', true]];
+
+/* the next time this countdown happens (yearly ones roll over) */
+function nextDate(c) {
+  if (!c.yearly || c.date >= K.ymd()) return c.date;
+  let d = K.fromYmd(c.date); const t = K.ymd();
+  while (K.ymd(d) < t) d.setFullYear(d.getFullYear() + 1);
+  return K.ymd(d);
+}
+function target(c) { const s = nextDate(c), d = K.fromYmd(s); if (c.time) { const [h, m] = c.time.split(':'); d.setHours(+h, +m); } return d; }
+function bigNum(c) {
+  const n = K.daysUntil(nextDate(c));
+  if (n === 0) return ['🎉', 'today'];
+  if (n < 0) return [-n, -n === 1 ? 'day ago' : 'days ago'];
+  if (n > 120) { const w = Math.round(n / 7); return [w, 'weeks']; }
+  return [n, n === 1 ? 'day' : 'days'];
+}
+function liveText(c) {
+  let ms = target(c) - Date.now(); if (ms <= 0) return '';
+  const d = Math.floor(ms / 864e5); ms -= d * 864e5; const h = Math.floor(ms / 36e5); ms -= h * 36e5; const m = Math.floor(ms / 6e4); const s = Math.floor((ms - m * 6e4) / 1000);
+  return `${d}d ${K.pad(h)}h ${K.pad(m)}m ${K.pad(s)}s`;
+}
+function schoolDaysUntil(c) {
+  let n = 0, s = K.ymd(); const end = nextDate(c);
+  while (s < end) { if (K.lessonsOn(s).length) n++; s = K.addDays(s, 1); }
+  return n;
+}
+
+function render() {
+  const all = C.all();
+  let html = K.header('Countdowns', 'countdown');
+  if (!all.length) {
+    html += `<div class="empty"><b>Count down to something</b>Holidays, exams, a trip, a birthday. Pick one or tap +.</div><div class="list">${IDEAS.map(([e, n], i) => `<button class="item" type="button" data-idea="${i}" style="width:100%"><span style="font-size:22px">${e}</span><span class="body title">${esc(n)}</span><span class="muted">+</span></button>`).join('')}</div>`;
+    K.$('#app').innerHTML = html; return;
+  }
+  const up = all.filter(c => nextDate(c) >= K.ymd()).sort((a, b) => nextDate(a) < nextDate(b) ? -1 : 1);
+  const past = all.filter(c => nextDate(c) < K.ymd()).sort((a, b) => a.date < b.date ? 1 : -1);
+  up.forEach((c, i) => html += card(c, i === 0));
+  if (past.length) html += `<div class="sec">Past</div>` + past.map(c => card(c, false, true)).join('');
+  K.$('#app').innerHTML = html;
+}
+function card(c, big, past) {
+  const [n, unit] = bigNum(c), s = nextDate(c), sd = K.school().lessons.length && !past && K.daysUntil(s) > 1 ? schoolDaysUntil(c) : 0;
+  return `<button class="cd ${big ? 'big' : ''} ${past ? 'past' : ''}" type="button" data-edit="${c.id}" style="--cc:${c.color || '#ffcf5c'}">
+    <span class="emo">${esc(c.emoji || '⏳')}</span>
+    <span class="body"><span class="t" style="display:block">${esc(c.title)}</span>
+      <span class="d" style="display:block">${esc(K.fmtDay(s, true))}${c.time ? ' · ' + c.time : ''}${c.yearly ? ' · every year' : ''}</span>
+      ${sd ? `<span class="d" style="display:block">${K.plural(sd, 'school day')} to go</span>` : ''}
+      ${big && !past ? `<span class="live" data-live="${c.id}" style="display:block">${liveText(c)}</span>` : ''}</span>
+    <span class="n num"><b>${n}</b><small>${unit}</small></span></button>`;
+}
+
+function edit(c, preset) {
+  const isNew = !c;
+  c = c || Object.assign({ id: K.uid(), title: '', date: '', time: '', emoji: '⏳', color: '#ffcf5c', yearly: false }, preset || {});
+  K.form({
+    title: isNew ? 'New countdown' : 'Edit countdown',
+    fields: [
+      { k: 'emoji', label: 'Icon', value: c.emoji, half: true, attrs: 'maxlength="4" style="font-size:20px;text-align:center"' },
+      { k: 'title', label: 'What', value: c.title, half: true, required: true },
+      { k: 'date', label: 'Date', type: 'date', value: c.date, half: true, required: true },
+      { k: 'time', label: 'Time (optional)', type: 'time', value: c.time, half: true },
+      { k: 'yearly', label: 'Every year (birthdays, holidays)', type: 'checkbox', value: c.yearly },
+      K.colorField('color', c.color),
+    ],
+    save(v) { Object.assign(c, v); C.upsert(c); render(); },
+    del: isNew ? null : () => { C.remove(c.id); render(); K.toast('Deleted', () => { C.upsert(c); render(); }); },
+  });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.edit) edit(C.byId(b.dataset.edit));
+  else if (b.dataset.idea) {
+    const [emoji, title, md, yearly] = IDEAS[+b.dataset.idea];
+    let date = '';
+    if (md) { const y = new Date().getFullYear(); date = `${y}-${md}`; if (date < K.ymd()) date = `${y + 1}-${md}`; }
+    edit(null, { emoji, title, date, yearly });
+  }
+  else if (b.id === 'fab') edit();
+});
+K.$('#fab').innerHTML = svg('plus');
+render();
+setInterval(() => document.querySelectorAll('[data-live]').forEach(el => { const c = C.byId(el.dataset.live); if (c) el.textContent = liveText(c); }), 1000);
+</script>
+</body>
+</html>

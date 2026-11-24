@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Habits · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .habit { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); }
+  .habit:first-child { border-top: 0; }
+  .habit .emo { width: 46px; height: 46px; border-radius: 14px; flex: none; display: grid; place-items: center; font-size: 22px; background: color-mix(in srgb, var(--hc) 16%, transparent); border: 2px solid transparent; transition: .15s; }
+  .habit.on .emo { background: var(--hc); border-color: var(--hc); }
+  .habit .body { flex: 1; min-width: 0; text-align: left; }
+  .habit .name { font-weight: 700; }
+  .week { display: flex; gap: 4px; margin-top: 6px; }
+  .week i { width: 16px; height: 16px; border-radius: 5px; background: var(--surface-2); font-style: normal; font-size: 9px; font-weight: 800; color: var(--muted-2); display: grid; place-items: center; }
+  .week i.y { background: var(--hc); color: #0d0f14; }
+  .week i.off { opacity: .35; }
+  .streak { text-align: right; flex: none; font-weight: 800; font-size: 18px; min-width: 44px; }
+  .streak small { display: block; font-size: 10.5px; font-weight: 700; color: var(--muted); letter-spacing: .03em; }
+  .heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 1fr); gap: 3px; overflow-x: auto; padding-bottom: 4px; }
+  .heat i { width: 13px; height: 13px; border-radius: 3px; background: var(--surface-2); }
+  .heat i.y { background: var(--hc); }
+  .heat i.f { opacity: 0; }
+  .ring { --p: 0; width: 64px; height: 64px; border-radius: 50%; background: conic-gradient(var(--c) calc(var(--p) * 1%), var(--surface-2) 0); display: grid; place-items: center; flex: none; }
+  .ring span { width: 50px; height: 50px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font-weight: 800; font-size: 15px; }
+</style>
+</head>
+<body style="--c:#f25f8a">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="New habit"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+const H = K.habits;
+const DAYSETS = [['', 'Every day'], ['1,2,3,4,5', 'Weekdays'], ['0,6', 'Weekends'], ['1,3,5', 'Mon, Wed, Fri'], ['2,4', 'Tue, Thu']];
+const IDEAS = [['💧', 'Drink 2 L water', 'water'], ['🏋️', 'Go to the gym', 'gym'], ['🥩', 'Hit protein goal', 'protein'], ['📚', 'Study 30 min', ''], ['📖', 'Read 10 pages', ''], ['🚶', '10,000 steps', ''], ['📵', 'No phone in bed', ''], ['🛏️', 'In bed by 23:00', ''], ['🦷', 'Floss', ''], ['💊', 'Creatine', '']];
+
+function weekCount(h, s) { const w = K.weekStart(s); let c = 0; for (let i = 0; i < 7; i++) if (K.habitDone(h, K.addDays(w, i))) c++; return c; }
+
+function render() {
+  const hs = H.all().filter(h => !h.archived), today = K.ymd();
+  let html = K.header('Habits', 'habits', K.notifyOn() ? '' : `<button class="iconbtn" id="bell" type="button" aria-label="Turn on habit reminders">${svg('bell')}</button>`);
+  if (!hs.length) {
+    html += `<div class="empty"><b>Build your first habit</b>Pick one to start, or tap + to make your own.</div><div class="list">${IDEAS.map(([e, n, a], i) => `<button class="item" type="button" data-idea="${i}" style="width:100%"><span style="font-size:22px">${e}</span><span class="body title">${esc(n)}</span>${a ? '<span class="tag">ticks itself</span>' : ''}<span class="muted">+</span></button>`).join('')}</div>`;
+    K.$('#app').innerHTML = html; return;
+  }
+  const due = hs.filter(h => !h.goal || h.goal === 'daily' ? K.habitDueOn(h, today) : true);
+  const done = due.filter(h => K.habitDone(h, today)).length;
+  const pct = due.length ? Math.round(done / due.length * 100) : 0;
+  const best = hs.map(h => [h, K.habitStreak(h)]).sort((a, b) => b[1].n - a[1].n)[0];
+  html += `<div class="card hl" style="display:flex;align-items:center;gap:16px"><div class="ring" style="--p:${pct}"><span class="num">${done}/${due.length}</span></div>
+    <div><div class="k">Today</div><div class="big">${pct === 100 ? 'All done! 🎉' : pct >= 50 ? 'Keep going 💪' : 'Let’s go'}</div>
+    <div class="muted small">${best && best[1].n ? `Best streak: ${esc(best[0].emoji || '')} ${esc(best[0].name)} · ${K.plural(best[1].n, best[1].unit)}` : 'Tick a habit to start a streak.'}</div></div></div>`;
+  html += `<div class="list">${hs.map(h => habitRow(h, today)).join('')}</div>`;
+  html += `<p class="hint" style="margin-top:6px">Tap the icon to tick it off. Tap the name for details. Habits with “auto” tick themselves from your other apps.</p>`;
+  const arch = H.all().filter(h => h.archived);
+  if (arch.length) html += `<div class="sec">Paused</div><div class="list">${arch.map(h => `<button class="item" type="button" data-edit="${h.id}" style="width:100%"><span style="font-size:20px">${esc(h.emoji || '•')}</span><span class="body title">${esc(h.name)}</span></button>`).join('')}</div>`;
+  K.$('#app').innerHTML = html;
+}
+function habitRow(h, today) {
+  const on = K.habitDone(h, today), st = K.habitStreak(h);
+  const weekly = h.goal && h.goal !== 'daily';
+  const ws = K.weekStart(today);
+  const dots = Array.from({ length: 7 }, (_, i) => { const s = K.addDays(ws, i); const y = K.habitDone(h, s); const off = !weekly && !K.habitDueOn(h, s); return `<i class="${y ? 'y' : ''} ${off ? 'off' : ''}" title="${K.fmtDay(s)}">${'MTWTFSS'[i]}</i>`; }).join('');
+  const sub = weekly ? `${weekCount(h, today)}/${h.goal} this week` : !K.habitDueOn(h, today) ? 'Not today' : on ? 'Done today' : h.remindAt ? `🔔 ${h.remindAt}` : '';
+  return `<div class="habit ${on ? 'on' : ''}" style="--hc:${h.color || '#f25f8a'}">
+    <button class="emo" type="button" data-tick="${h.id}" aria-pressed="${on}" aria-label="${on ? 'Undo' : 'Tick off'}: ${esc(h.name)}">${on ? '✓' : esc(h.emoji || '•')}</button>
+    <button class="body" type="button" data-detail="${h.id}"><div class="name">${esc(h.name)} ${h.auto ? '<span class="tag">auto</span>' : ''}</div>
+      <div class="week">${dots}</div>${sub ? `<div class="small muted" style="margin-top:4px">${esc(sub)}</div>` : ''}</button>
+    <div class="streak num">${st.n ? '🔥' + st.n : '–'}<small>${st.unit === 'week' ? 'WEEKS' : 'DAYS'}</small></div></div>`;
+}
+
+function tick(id, s = K.ymd()) {
+  const h = H.byId(id); h.log = h.log || {};
+  if (h.auto && !h.log[s] && K.habitDone(h, s)) { K.toast('This one ticks itself from your other apps'); return; }
+  if (h.log[s]) delete h.log[s]; else h.log[s] = 1;
+  H.upsert(h); render();
+  if (h.log[s]) { const st = K.habitStreak(h); if (st.n > 1 && [3, 7, 14, 21, 30, 50, 100, 365].includes(st.n)) K.toast(`🔥 ${st.n}-${st.unit} streak! Keep it up!`); else if (navigator.vibrate) navigator.vibrate(30); }
+}
+
+function detail(h) {
+  const weeks = 18, today = K.ymd(), start = K.addDays(K.weekStart(today), -(weeks - 1) * 7);
+  let cells = '', total = 0, possible = 0;
+  for (let i = 0; i < weeks * 7; i++) { const s = K.addDays(start, i); if (s > today) { cells += '<i class="f"></i>'; continue; } const y = K.habitDone(h, s); if (y) total++; if (K.habitDueOn(h, s)) possible++; cells += `<i class="${y ? 'y' : ''}" title="${s}"></i>`; }
+  let best = 0, run = 0;
+  for (let i = 0; i < 365; i++) { const s = K.addDays(today, -364 + i); if (!K.habitDueOn(h, s) && !(h.goal && h.goal !== 'daily')) continue; if (K.habitDone(h, s)) { run++; best = Math.max(best, run); } else if (s !== today) run = 0; }
+  const st = K.habitStreak(h);
+  const f = K.form({
+    title: `${h.emoji || ''} ${h.name}`, saveLabel: 'Close',
+    fields: [{ type: 'html', k: 'x', html: `
+      <div class="grid2"><div class="stat"><div class="k">Streak</div><div class="v num">🔥 ${st.n}<small> ${st.unit}s</small></div></div><div class="stat"><div class="k">Best (year)</div><div class="v num">${best}<small> days</small></div></div></div>
+      <div class="sec" style="margin-top:4px">Last ${weeks} weeks · ${total} times</div><div class="heat" style="--hc:${h.color}">${cells}</div>
+      <div class="row-btns" style="margin-top:14px"><button class="btn sm" type="button" data-yest="${h.id}">${h.log && h.log[K.addDays(today, -1)] ? 'Undo yesterday' : 'I did it yesterday'}</button><button class="btn sm" type="button" data-editfrom="${h.id}">Edit habit</button></div>` }],
+    save: () => {},
+  });
+  f.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.yest) { tick(h.id, K.addDays(today, -1)); f.parentElement.remove(); detail(H.byId(h.id)); }
+    if (b.dataset.editfrom) { f.parentElement.remove(); edit(H.byId(h.id)); }
+  });
+}
+
+function edit(h, preset) {
+  const isNew = !h;
+  h = h || Object.assign({ id: K.uid(), name: '', emoji: '🎯', color: '#f25f8a', goal: 'daily', days: [], auto: '', remindAt: '', log: {} }, preset || {});
+  K.form({
+    title: isNew ? 'New habit' : 'Edit habit',
+    fields: [
+      { k: 'emoji', label: 'Icon', value: h.emoji, half: true, attrs: 'maxlength="4" style="font-size:20px;text-align:center"' },
+      { k: 'name', label: 'Habit', value: h.name, half: true, required: true },
+      { k: 'goal', label: 'How often', type: 'select', value: String(h.goal || 'daily'), options: [['daily', 'On set days'], ['1', '1× a week'], ['2', '2× a week'], ['3', '3× a week'], ['4', '4× a week'], ['5', '5× a week'], ['6', '6× a week']], half: true },
+      { k: 'days', label: 'Which days', type: 'select', value: (h.days || []).join(','), options: DAYSETS, half: true },
+      { k: 'auto', label: 'Tick itself when…', type: 'select', value: h.auto || '', options: K.AUTO },
+      { k: 'remindAt', label: 'Remind me if not done by', type: 'time', value: h.remindAt, hint: 'Leave empty for no reminder' },
+      K.colorField('color', h.color),
+      ...(!isNew ? [{ k: 'archived', label: 'Pause this habit', type: 'checkbox', value: !!h.archived }] : []),
+    ],
+    save(v) {
+      Object.assign(h, { emoji: v.emoji || '🎯', name: v.name, goal: v.goal, days: v.goal === 'daily' && v.days ? v.days.split(',').map(Number) : [], auto: v.auto, remindAt: v.remindAt, color: v.color, archived: !!v.archived });
+      H.upsert(h); render();
+      if (h.remindAt && !K.notifyOn()) K.askNotify();
+    },
+    del: isNew ? null : () => { if (!confirm(`Delete “${h.name}” and its whole history?`)) return false; H.remove(h.id); render(); },
+  });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.tick) tick(b.dataset.tick);
+  else if (b.dataset.detail) detail(H.byId(b.dataset.detail));
+  else if (b.dataset.edit) edit(H.byId(b.dataset.edit));
+  else if (b.dataset.idea) { const [emoji, name, auto] = IDEAS[+b.dataset.idea]; edit(null, { emoji, name, auto }); }
+  else if (b.id === 'fab') edit();
+  else if (b.id === 'bell') K.askNotify().then(ok => ok && render());
+});
+K.$('#fab').innerHTML = svg('plus');
+render();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') render(); });
+</script>
+</body>
+</html>

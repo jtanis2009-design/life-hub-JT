@@ -13,6 +13,8 @@
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <script src="hub.js"></script>
+<script src="lib/kit.js"></script>
+<script src="lib/agenda.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -79,6 +81,14 @@ a.card:active, button.card:active { transform: scale(.99); }
 .bar i { display: block; height: 100%; border-radius: 99px; background: var(--c, var(--accent)); width: 0; transition: width .4s; }
 .bar.over i { background: var(--bad); }
 
+.agrow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); text-decoration: none; }
+.agrow:first-of-type { border-top: 0; }
+.agrow .tm { width: 46px; flex: none; font-size: 12.5px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.agrow .b { width: 4px; height: 26px; border-radius: 4px; background: var(--dot); flex: none; }
+.agrow .tx { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agrow .tx small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.agrow .late { color: var(--bad); font-weight: 700; font-size: 12px; flex: none; }
+.agrow.done .tx { color: var(--muted-2); text-decoration: line-through; }
 .banner { display: flex; gap: 10px; align-items: center; background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); border-radius: 14px; padding: 11px 13px; font-size: 13.5px; margin-bottom: 12px; }
 .banner b { font-weight: 700; }
 .banner .act { margin-left: auto; font-weight: 700; color: var(--accent); white-space: nowrap; }
@@ -154,6 +164,24 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       <div class="sub" id="wo-sub">&nbsp;</div>
     </a>
 
+    <div class="card" id="c-plan" style="--c:#8b7cff">
+      <div class="k"><span class="dot"></span><span id="pl-title">Today’s plan</span><a class="go" href="calendar/" style="text-decoration:none" aria-label="Open calendar">›</a></div>
+      <div id="pl-list" style="margin-top:8px"></div>
+    </div>
+
+    <div class="tiles">
+      <a class="tile" href="todo/" style="--c:#8b7cff">
+        <div class="k">To-do</div><div class="v num" id="td-v">–</div><div class="s" id="td-s">&nbsp;</div>
+      </a>
+      <a class="tile" href="habits/" style="--c:#f25f8a">
+        <div class="k">Habits</div><div class="v num" id="hb-v">–</div><div class="s" id="hb-s">&nbsp;</div>
+        <div class="bar"><i id="hb-b"></i></div>
+      </a>
+      <a class="tile" href="countdowns/" style="--c:#ffcf5c">
+        <div class="k">Countdown</div><div class="v num" id="cd-v">–</div><div class="s" id="cd-s">&nbsp;</div>
+      </a>
+    </div>
+
     <div class="tiles">
       <a class="tile" href="workout/" style="--c:var(--water)">
         <div class="k">Water</div><div class="v num" id="wa-v">–</div><div class="s num" id="wa-s">&nbsp;</div>
@@ -205,6 +233,19 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       </div>
     </div>
     <p class="note">The PIN keeps other people out of the app on your phone. It does not encrypt your data.</p>
+
+    <div class="sec">Reminders</div>
+    <div class="panel">
+      <div class="row">
+        <div class="t"><b id="nt-state">Notifications are off</b><small id="nt-sub">For to-dos, homework, tests, events, habits and countdowns.</small></div>
+        <button class="btn primary" id="ntOn" type="button">Turn on</button>
+      </div>
+      <div class="row" id="ntTestRow" hidden>
+        <div class="t"><b>Send a test notification</b><small id="nt-next">&nbsp;</small></div>
+        <button class="btn" id="ntTest" type="button">Test</button>
+      </div>
+    </div>
+    <p class="note">Reminders arrive while Life Hub is open or running in the background. Reminders that reach your phone when the app is fully closed come in a later update (they need a small cloud service).</p>
 
     <div class="sec">Backup</div>
     <div class="panel">
@@ -449,6 +490,47 @@ function drawWorkout() {
   $('#ca-b').parentElement.classList.toggle('over', total > limit);
 }
 
+/* ---------- today's plan (school, events, homework, to-dos) ---------- */
+function drawPlan() {
+  const d = ymd(), nowHm = hm(new Date());
+  const items = K.agenda(d, { done: true }).filter(x => x.kind !== 'workout');
+  const lessons = items.filter(x => x.kind === 'lesson');
+  const rows = [];
+  if (lessons.length) {
+    const next = lessons.find(l => l.end > nowHm);
+    const first = lessons[0], last = lessons[lessons.length - 1];
+    rows.push({ time: first.time, color: '#f2994a', href: 'school/', title: next ? (next.time <= nowHm ? `Now: ${next.title}` : `Next: ${next.title}`) : 'School’s done for today ✓',
+      small: next ? `${next.time}–${next.end}${next.sub ? ' · ' + next.sub : ''}` : `${first.time}–${last.end}` });
+  }
+  for (const x of items.filter(x => x.kind !== 'lesson')) rows.push({ time: x.time, color: x.color, href: x.href, title: x.title, small: x.kind === 'event' ? x.sub : '', done: x.done });
+  const overdue = K.tasks.all().filter(t => !t.done && t.due && t.due < d);
+  if (overdue.length) rows.push({ time: '', color: 'var(--bad)', href: 'todo/', title: `${overdue.length} overdue to-do${overdue.length > 1 ? 's' : ''}`, late: true });
+  const tmr = K.homework.all().filter(h => !h.done && h.due === K.addDays(d, 1));
+  for (const h of tmr) rows.push({ time: '', color: K.subjectColor(h.subject), href: 'school/#homework', title: `${h.type === 'test' ? 'Test' : 'Due'} tomorrow: ${h.subject ? h.subject + ' — ' : ''}${h.title}` });
+  const shown = rows.slice(0, 7);
+  $('#pl-list').innerHTML = shown.length ? shown.map(r => `<a class="agrow ${r.done ? 'done' : ''}" href="${esc(r.href)}" style="--dot:${r.color}">
+      <span class="tm">${r.time || ''}</span><span class="b"></span><span class="tx">${esc(r.title)}${r.small ? `<small>${esc(r.small)}</small>` : ''}</span>${r.late ? '<span class="late">late</span>' : ''}</a>`).join('')
+      + (rows.length > 7 ? `<a class="agrow" href="calendar/"><span class="tm"></span><span class="tx" style="color:var(--muted)">+${rows.length - 7} more</span></a>` : '')
+    : `<div class="sub" style="margin-top:0">Nothing planned. Add <a href="todo/">to-dos</a>, your <a href="school/">timetable</a> or <a href="calendar/">events</a>.</div>`;
+
+  /* to-do tile */
+  const open = K.tasks.all().filter(t => !t.done && t.due && t.due <= d);
+  $('#td-v').innerHTML = `${open.length}<small> left</small>`;
+  $('#td-s').textContent = overdue.length ? `${overdue.length} overdue` : open.length ? 'due today' : 'All clear 🎉';
+  /* habits tile */
+  const hs = K.habits.all().filter(h => !h.archived && (h.goal && h.goal !== 'daily' ? true : K.habitDueOn(h, d)));
+  const hd = hs.filter(h => K.habitDone(h, d)).length;
+  $('#hb-v').innerHTML = hs.length ? `${hd}<small>/${hs.length}</small>` : '–';
+  const top = K.habits.all().map(h => K.habitStreak(h).n).sort((a, b) => b - a)[0] || 0;
+  $('#hb-s').textContent = hs.length ? (top ? `best streak 🔥${top}` : 'tick one off') : 'Add a habit';
+  $('#hb-b').style.width = (hs.length ? hd / hs.length * 100 : 0) + '%';
+  /* countdown tile */
+  const cds = K.countdowns.all().map(c => { let s = c.date; if (c.yearly) { const x = K.fromYmd(c.date); while (K.ymd(x) < d) x.setFullYear(x.getFullYear() + 1); s = K.ymd(x); } return { c, s }; })
+    .filter(x => x.s >= d).sort((a, b) => a.s < b.s ? -1 : 1);
+  if (cds.length) { const n = K.daysUntil(cds[0].s); $('#cd-v').innerHTML = n === 0 ? '🎉' : `${n}<small> ${n === 1 ? 'day' : 'days'}</small>`; $('#cd-s').textContent = `${cds[0].c.emoji || ''} ${cds[0].c.title}`.trim(); }
+  else { $('#cd-v').textContent = '–'; $('#cd-s').textContent = 'Add one'; }
+}
+
 /* ---------- backup reminder ---------- */
 function drawBackupBanner() {
   const last = get('hub.lastBackup', 0);
@@ -478,12 +560,12 @@ const ICON = {
 const APPS = [
   { id: 'travel', name: 'Travel', sub: 'Live trips & map', c: 'var(--travel)', href: 'travel/' },
   { id: 'workout', name: 'Workout', sub: 'Gym, food, water', c: 'var(--workout)', href: 'workout/' },
-  { id: 'todo', name: 'To-do', sub: 'Tasks & reminders', c: '#8b7cff' },
-  { id: 'school', name: 'School', sub: 'Timetable & homework', c: '#f2994a' },
-  { id: 'calendar', name: 'Calendar', sub: 'Everything by day', c: '#56ccf2' },
-  { id: 'habits', name: 'Habits', sub: 'Streaks', c: '#f25f8a' },
+  { id: 'todo', name: 'To-do', sub: 'Tasks & reminders', c: '#8b7cff', href: 'todo/' },
+  { id: 'school', name: 'School', sub: 'Timetable & homework', c: '#f2994a', href: 'school/' },
+  { id: 'calendar', name: 'Calendar', sub: 'Everything by day', c: '#56ccf2', href: 'calendar/' },
+  { id: 'habits', name: 'Habits', sub: 'Streaks', c: '#f25f8a', href: 'habits/' },
   { id: 'sleep', name: 'Sleep', sub: 'Bedtime & debt', c: '#9b8cff' },
-  { id: 'countdown', name: 'Countdowns', sub: 'Exams, holidays', c: '#ffcf5c' },
+  { id: 'countdown', name: 'Countdowns', sub: 'Exams, holidays', c: '#ffcf5c', href: 'countdowns/' },
   { id: 'shopping', name: 'Shopping', sub: 'Groceries & wishlist', c: '#6fdc8c' },
   { id: 'money', name: 'Money', sub: 'Budget & savings', c: '#3ecf9a' },
   { id: 'notes', name: 'Notes', sub: 'Notes & journal', c: '#c9b37e' },
@@ -511,6 +593,7 @@ function drawSettings() {
   $('#wResetRow').hidden = !p;
   $('#theme').value = get('hub.theme', '');
   const last = get('hub.lastBackup', 0);
+  drawNotify();
   $('#bk-last').textContent = last ? `Last backup: ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(last)}` : 'Everything from every app in one file. No backup made yet.';
 }
 async function askPin(why) {
@@ -536,8 +619,20 @@ $('#pinAfter').onchange = e => { Hub.setLockAfter(+e.target.value); toast('Saved
 $('#pinOff').onclick = async () => { if (!(await askPin('Turning the PIN lock off.'))) return; Hub.clearPin(); drawSettings(); toast('PIN lock is off'); };
 $('#lockBtn').onclick = () => Hub.lockNow();
 
+function drawNotify() {
+  const on = K.notifyOn(), blocked = K.canNotify() && Notification.permission === 'denied';
+  $('#nt-state').textContent = on ? 'Notifications are on' : blocked ? 'Notifications are blocked' : 'Notifications are off';
+  if (blocked) $('#nt-sub').textContent = 'Allow them in Chrome: ⋮ → Settings → Site settings → Notifications.';
+  $('#ntOn').hidden = on;
+  $('#ntTestRow').hidden = !on;
+  const n = K.nextReminder();
+  $('#nt-next').textContent = n ? `Next: ${n.title} · ${K.fmtDay(K.ymd(new Date(n.at)))} ${hm(new Date(n.at))}` : 'No reminders planned yet.';
+}
+$('#ntOn').onclick = async () => { if (await K.askNotify()) { drawNotify(); K.showNotification('Life Hub', 'Reminders are on 🔔', location.href, 'hub-test'); } else drawNotify(); };
+$('#ntTest').onclick = () => K.showNotification('Life Hub test 🔔', 'This is how your reminders will look.', location.href, 'hub-test');
+
 /* backup: every app's data on this website, minus logins and keys */
-const SKIP = /^(wl_auth|wl_aikey|wl_sync_|wl_mvundo|hub\.lock|hub\.unlocked|hub\.hiddenAt)/;
+const SKIP = /^(wl_auth|wl_aikey|wl_sync_|wl_mvundo|hub\.lock|hub\.unlocked|hub\.hiddenAt|hub\.fired)/;
 $('#bkSave').onclick = () => {
   const data = {};
   for (let i = 0; i < localStorage.length; i++) {
@@ -577,12 +672,12 @@ $('#wReset').onclick = () => { localStorage.removeItem('hub.place'); drawSetting
 $('#theme').onchange = e => { set('hub.theme', e.target.value); applyTheme(); };
 
 /* ---------- start ---------- */
-function refreshAll() { greet(); drawWorkout(); drawBackupBanner(); loadTrip(); loadWeather(); }
+function refreshAll() { greet(); drawWorkout(); drawPlan(); drawBackupBanner(); loadTrip(); loadWeather(); }
 drawApps(); route(); refreshAll(); drawSettings();
-setInterval(() => { if (document.visibilityState === 'visible') { loadTrip(); drawWorkout(); } }, 60000);
+setInterval(() => { if (document.visibilityState === 'visible') { loadTrip(); drawWorkout(); drawPlan(); } }, 60000);
 setInterval(() => { if (document.visibilityState === 'visible') loadWeather(); }, 15 * 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshAll(); });
-addEventListener('storage', drawWorkout);
+addEventListener('storage', () => { drawWorkout(); drawPlan(); });
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
 </script>

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>To-do · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .subs { margin: 6px 0 0; padding: 0; list-style: none; }
+  .subs li { display: flex; align-items: center; gap: 8px; font-size: 13.5px; padding: 3px 0; }
+  .subs li button.mini { width: 18px; height: 18px; border-radius: 5px; border: 2px solid var(--muted-2); flex: none; display: grid; place-items: center; }
+  .subs li button.mini.on { background: var(--c); border-color: var(--c); }
+  .subs li button.mini svg { width: 11px; height: 11px; color: #0d0f14; opacity: 0; }
+  .subs li button.mini.on svg { opacity: 1; }
+  .subs li.d span { text-decoration: line-through; color: var(--muted-2); }
+  .preview { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 2px 12px; min-height: 22px; }
+</style>
+</head>
+<body style="--c:#8b7cff">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="New to-do"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+const T = K.tasks;
+const lists = () => K.get('lists', ['Inbox', 'School', 'Personal', 'Gym']);
+let view = K.get('todo.view', 'today'), listFilter = '';
+
+function render() {
+  const all = T.all(), today = K.ymd();
+  const open = all.filter(t => !t.done);
+  const isToday = t => t.due && t.due <= today;
+  const counts = { today: open.filter(isToday).length, upcoming: open.filter(t => t.due > today).length, all: open.length, done: all.filter(t => t.done).length };
+  const bell = K.notifyOn() ? '' : `<button class="iconbtn" id="bell" type="button" aria-label="Turn on reminders" title="Turn on reminders">${svg('bell')}</button>`;
+  let html = K.header('To-do', 'todo', bell) + `
+    <form class="quick" id="quick" autocomplete="off">
+      <input id="q" placeholder="Add a to-do… e.g. gym bag tomorrow 7am #gym" aria-label="New to-do">
+      <button class="btn primary" type="submit" aria-label="Add">${svg('plus', 'width="18" height="18"')}</button>
+    </form>
+    <div class="preview" id="preview"></div>
+    <div class="tabs" role="tablist">
+      ${[['today', 'Today'], ['upcoming', 'Upcoming'], ['all', 'All'], ['done', 'Done']].map(([k, l]) => `<button type="button" data-view="${k}" aria-pressed="${view === k}">${l}<span class="n">${counts[k] || ''}</span></button>`).join('')}
+    </div>`;
+
+  if (view === 'today') {
+    const late = open.filter(t => t.due && t.due < today), now = open.filter(t => t.due === today), none = open.filter(t => !t.due);
+    if (!late.length && !now.length) html += `<div class="empty"><b>Nothing due today 🎉</b>Add something above, or check Upcoming.</div>`;
+    if (late.length) html += `<div class="sec">Overdue</div>` + listHtml(sortT(late));
+    if (now.length) html += `<div class="sec">Today</div>` + listHtml(sortT(now));
+    if (none.length) html += `<div class="sec">No date</div>` + listHtml(sortT(none));
+  } else if (view === 'upcoming') {
+    const up = sortT(open.filter(t => t.due > today));
+    if (!up.length) html += `<div class="empty"><b>Nothing planned yet</b>To-dos with a date after today show up here.</div>`;
+    const groups = {}; up.forEach(t => (groups[t.due] = groups[t.due] || []).push(t));
+    for (const d of Object.keys(groups).sort()) html += `<div class="sec">${esc(K.fmtDay(d, true))} <span class="muted small">${K.daysUntil(d) > 6 ? K.fmtDate(d) : ''}</span></div>` + listHtml(groups[d]);
+  } else if (view === 'all') {
+    const ls = lists();
+    html += `<div class="tabs">${['', ...ls].map(l => `<button type="button" data-list="${esc(l)}" aria-pressed="${listFilter === l}">${l ? esc(l) : 'Every list'}</button>`).join('')}<button type="button" id="newList">+ List</button></div>`;
+    const groups = {};
+    open.filter(t => !listFilter || (t.list || 'Inbox') === listFilter).forEach(t => (groups[t.list || 'Inbox'] = groups[t.list || 'Inbox'] || []).push(t));
+    const names = Object.keys(groups).sort((a, b) => ls.indexOf(a) - ls.indexOf(b));
+    if (!names.length) html += `<div class="empty"><b>No open to-dos</b>${listFilter ? 'Nothing in this list.' : ''}</div>`;
+    for (const n of names) html += `<div class="sec">${esc(n)}</div>` + listHtml(sortT(groups[n]));
+  } else {
+    const done = all.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+    if (!done.length) html += `<div class="empty"><b>Nothing finished yet</b>Ticked-off to-dos land here.</div>`;
+    else html += `<div class="sec">Finished<button class="act" id="clearDone" type="button">Clear all</button></div>` + listHtml(done.slice(0, 100));
+  }
+  html += `<p class="hint" style="margin-top:14px">Tip: type dates and times in your to-do: <b>today</b>, <b>tomorrow 7am</b>, <b>friday</b>, <b>28/11</b>, <b>every monday</b>, <b>#school</b>, <b>!!</b> for important. Dutch words work too.</p>`;
+  K.$('#app').innerHTML = html;
+}
+function sortT(l) { return l.sort((a, b) => (a.due || '9') < (b.due || '9') ? -1 : (a.due || '9') > (b.due || '9') ? 1 : (b.priority || 0) - (a.priority || 0) || ((a.time || '99') < (b.time || '99') ? -1 : 1)); }
+function listHtml(items) { return `<div class="list">${items.map(itemHtml).join('')}</div>`; }
+function itemHtml(t) {
+  const today = K.ymd(), meta = [];
+  if (t.due) { const late = !t.done && t.due < today; meta.push(`<span class="${late ? 'late' : t.due === today ? 'soon' : ''}">${esc(K.fmtDay(t.due))}${t.time ? ' ' + t.time : ''}</span>`); }
+  if (t.repeat) meta.push(`<span>${svg('repeat', 'width="12" height="12"')} ${esc((K.REPEATS.find(r => r[0] === t.repeat) || [, ''])[1].toLowerCase())}</span>`);
+  if (t.remind) meta.push(`<span>${svg('bell', 'width="12" height="12"')}</span>`);
+  if (t.list && t.list !== 'Inbox' && view !== 'all') meta.push(`<span class="tag">${esc(t.list)}</span>`);
+  const subs = t.sub || [];
+  if (subs.length) meta.push(`<span>${subs.filter(s => s.d).length}/${subs.length} steps</span>`);
+  if (t.notes) meta.push(`<span>📝</span>`);
+  return `<div class="item ${t.done ? 'done' : ''}">
+    <button class="check ${t.done ? 'on' : 'p' + (t.priority || 0)}" data-done="${t.id}" type="button" aria-label="${t.done ? 'Mark not done' : 'Mark done'}: ${esc(t.title)}">${svg('check')}</button>
+    <div class="body"><button class="title" data-edit="${t.id}" type="button" style="text-align:left;width:100%">${t.priority >= 2 ? '<span style="color:var(--bad)">!</span> ' : ''}${esc(t.title)}</button>
+      ${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}
+      ${subs.length && !t.done ? `<ul class="subs">${subs.map((s, i) => `<li class="${s.d ? 'd' : ''}"><button class="mini ${s.d ? 'on' : ''}" type="button" data-sub="${t.id}:${i}" aria-label="Step ${esc(s.t)}">${svg('check')}</button><span>${esc(s.t)}</span></li>`).join('')}</ul>` : ''}
+    </div></div>`;
+}
+
+function toggle(id) {
+  const t = T.byId(id); if (!t) return;
+  const before = JSON.parse(JSON.stringify(t));
+  if (!t.done && t.repeat) {
+    t.due = K.repeatNext(t.due || K.ymd(), t.repeat);
+    t.sub = (t.sub || []).map(s => ({ ...s, d: false }));
+    t.streak = (t.streak || 0) + 1;
+    T.upsert(t); render();
+    K.toast(`Done. Next: ${K.fmtDay(t.due)}`, () => { T.upsert(before); render(); });
+    return;
+  }
+  t.done = !t.done; t.doneAt = t.done ? Date.now() : null;
+  T.upsert(t); render();
+  if (t.done) K.toast('Done ✓', () => { T.upsert(before); render(); });
+}
+
+function edit(t) {
+  const isNew = !t;
+  t = t || { id: K.uid(), title: '', list: listFilter || 'Inbox', due: view === 'today' ? K.ymd() : '', priority: 0, remind: false, repeat: '', sub: [] };
+  const ls = lists(); if (t.list && !ls.includes(t.list)) ls.push(t.list);
+  K.form({
+    title: isNew ? 'New to-do' : 'Edit to-do',
+    fields: [
+      { k: 'title', label: 'To-do', value: t.title, required: true },
+      { k: 'due', label: 'Date', type: 'date', value: t.due, half: true },
+      { k: 'time', label: 'Time', type: 'time', value: t.time || '', half: true },
+      { k: 'remind', label: '🔔 Remind me (at the time, or 08:00)', type: 'checkbox', value: t.remind },
+      { k: 'repeat', label: 'Repeat', type: 'select', value: t.repeat || '', options: K.REPEATS, half: true },
+      { k: 'list', label: 'List', type: 'select', value: t.list || 'Inbox', options: ls, half: true },
+      { k: 'priority', label: 'Priority', type: 'seg', value: String(t.priority || 0), options: [['0', 'Normal'], ['1', 'Medium'], ['2', 'High'], ['3', 'Urgent']] },
+      { k: 'steps', label: 'Steps (one per line)', type: 'textarea', value: (t.sub || []).map(s => (s.d ? '✓ ' : '') + s.t).join('\n'), placeholder: 'Buy cardboard\nPrint photos' , attrs: 'rows="3" style="min-height:70px"' },
+      { k: 'notes', label: 'Notes', type: 'textarea', value: t.notes || '', attrs: 'rows="2" style="min-height:60px"' },
+    ],
+    save(v) {
+      if (v.remind && !v.due) v.due = K.ymd();
+      const sub = v.steps.split('\n').map(s => s.trim()).filter(Boolean).map(s => ({ t: s.replace(/^✓\s*/, ''), d: /^✓/.test(s) }));
+      Object.assign(t, { title: v.title, due: v.due, time: v.time, remind: v.remind, repeat: v.repeat, list: v.list, priority: +v.priority, sub, notes: v.notes });
+      if (t.remind && !K.notifyOn()) K.askNotify();
+      T.upsert(t); render();
+    },
+    del: isNew ? null : () => { const b = JSON.parse(JSON.stringify(t)); T.remove(t.id); render(); K.toast('Deleted', () => { T.upsert(b); render(); }); },
+  });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.view) { view = b.dataset.view; K.put('todo.view', view); render(); }
+  else if (b.dataset.list != null) { listFilter = b.dataset.list; render(); }
+  else if (b.dataset.done) toggle(b.dataset.done);
+  else if (b.dataset.edit) edit(T.byId(b.dataset.edit));
+  else if (b.dataset.sub) { const [id, i] = b.dataset.sub.split(':'); const t = T.byId(id); t.sub[i].d = !t.sub[i].d; T.upsert(t); render(); }
+  else if (b.id === 'fab') edit();
+  else if (b.id === 'bell') K.askNotify().then(ok => { if (ok) { K.toast('Reminders are on'); render(); } });
+  else if (b.id === 'newList') { const n = (prompt('Name of the new list:') || '').trim(); if (n && !lists().includes(n)) { K.put('lists', [...lists(), n]); listFilter = n; render(); } }
+  else if (b.id === 'clearDone') { const keep = T.all().filter(t => !t.done), gone = T.all().filter(t => t.done); T.save(keep); render(); K.toast(`Cleared ${gone.length}`, () => { T.save(keep.concat(gone)); render(); }); }
+});
+document.addEventListener('submit', e => {
+  if (e.target.id !== 'quick') return; e.preventDefault();
+  const text = K.$('#q').value.trim(); if (!text) return;
+  const p = K.parseQuick(text);
+  if (!p.title) return K.toast('Type what you need to do');
+  const ls = lists();
+  const list = p.list ? (ls.find(l => l.toLowerCase() === p.list.toLowerCase()) || p.list) : (view === 'all' && listFilter) || 'Inbox';
+  if (!ls.includes(list)) K.put('lists', [...ls, list]);
+  const t = { id: K.uid(), title: p.title, due: p.due || (view === 'today' ? K.ymd() : ''), time: p.time, remind: !!p.time, repeat: p.repeat, priority: p.priority, list, sub: [] };
+  T.upsert(t);
+  if (t.remind && !K.notifyOn()) K.askNotify();
+  render(); K.$('#q').focus();
+  K.toast(`Added${t.due ? ' for ' + K.fmtDayIn(t.due) : ''}${t.time ? ' at ' + t.time : ''}`);
+});
+document.addEventListener('input', e => {
+  if (e.target.id !== 'q') return;
+  const v = e.target.value.trim(), el = K.$('#preview');
+  if (!v) { el.innerHTML = ''; return; }
+  const p = K.parseQuick(v), bits = [];
+  if (p.due) bits.push('📅 ' + K.fmtDay(p.due)); if (p.time) bits.push('⏰ ' + p.time + ' 🔔'); if (p.repeat) bits.push('🔁 ' + K.REPEATS.find(r => r[0] === p.repeat)[1].toLowerCase());
+  if (p.list) bits.push('# ' + p.list); if (p.priority) bits.push('❗'.repeat(p.priority));
+  el.innerHTML = bits.map(b => `<span class="tag">${esc(b)}</span>`).join('');
+});
+K.$('#fab').innerHTML = svg('plus');
+render();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') render(); });
+</script>
+</body>
+</html>
