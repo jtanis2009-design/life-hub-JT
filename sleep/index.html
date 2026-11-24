@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sleep · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .bigbtn { width: 100%; padding: 18px; border-radius: 18px; font-size: 17px; font-weight: 800; background: var(--c); color: #0d0f14; display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 12px; }
+  .bigbtn.alt { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+  .chart { display: flex; align-items: flex-end; gap: 5px; height: 130px; padding: 8px 0 0; position: relative; }
+  .chart .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; min-width: 0; }
+  .chart .col i { width: 100%; max-width: 22px; border-radius: 6px 6px 3px 3px; background: var(--c); min-height: 3px; }
+  .chart .col i.low { background: var(--bad); }
+  .chart .col i.none { background: var(--surface-2); height: 3px !important; }
+  .chart .col span { font-size: 10px; color: var(--muted-2); font-weight: 700; }
+  .chart .goal { position: absolute; left: 0; right: 0; border-top: 2px dashed color-mix(in srgb, var(--good) 70%, transparent); pointer-events: none; }
+  .stars { font-size: 13px; letter-spacing: 1px; }
+</style>
+</head>
+<body style="--c:#9b8cff">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="Add a night"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+const S = K.sleepLog;
+const fmtH = m => `${Math.floor(m / 60)}h ${K.pad(m % 60)}m`;
+const local = d => `${K.ymd(d)}T${K.hm(d)}`;
+
+function caffeineAtBed(bed) {
+  const w = K.workoutData(); const t = K.ymd(), y = K.addDays(t, -1);
+  const caf = ((w.water.find(x => x.date === t) || {}).caf || []).concat((w.water.find(x => x.date === y) || {}).caf || []);
+  return Math.round(caf.reduce((s, x) => { const h = (bed - x[0]) / 36e5; return h < 0 ? s : s + K.num(x[1]) * Math.pow(.5, h / 5); }, 0));
+}
+
+function render() {
+  const c = K.sleepCfg(), pending = K.get('sleep.pending', null);
+  const log = S.all().filter(e => e.bed && e.wake && K.sleepMins(e)).sort((a, b) => a.wake < b.wake ? 1 : -1);
+  let html = K.header('Sleep', 'sleep', `<button class="iconbtn" type="button" data-act="settings" aria-label="Sleep settings">${svg('gear')}</button>`);
+  if (pending) {
+    const mins = Math.round((Date.now() - new Date(pending)) / 60000);
+    html += `<div class="card hl"><div class="k">Sleeping since ${pending.slice(11)}</div><div class="big num">${fmtH(Math.max(0, mins))}</div></div>
+      <button class="bigbtn" type="button" data-act="wake">☀️ I’m awake</button><button class="btn block" type="button" data-act="cancelBed">Cancel</button>`;
+  } else {
+    html += `<button class="bigbtn" type="button" data-act="bed">🌙 Going to sleep</button>`;
+  }
+  /* tonight's plan */
+  const tm = K.addDays(K.ymd(), new Date().getHours() < 5 ? 0 : 1);
+  const plan = K.bedtimeFor(tm), caf = caffeineAtBed(plan.bed.getTime());
+  html += `<div class="card"><div class="k">Tonight</div><div class="big">Bed by ${K.hm(plan.bed)}</div>
+    <div class="muted small">${plan.first ? `${plan.first.subject} at ${plan.first.start} ${K.fmtDayIn(tm)} → wake ${K.hm(plan.wake)} (${c.wakeBefore} min to get ready and travel)` : `Wake at ${K.hm(plan.wake)} ${K.fmtDayIn(tm)}`} · ${c.goal} h of sleep</div>
+    ${caf >= 50 ? `<div class="small" style="color:var(--warn);margin-top:6px">☕ About ${caf} mg caffeine will still be in your body at bedtime. That can make it harder to fall asleep.</div>` : ''}</div>`;
+  if (!log.length) { html += `<div class="empty"><b>No nights logged yet</b>Tap “Going to sleep” tonight and “I’m awake” in the morning, or add a night with +.</div>`; K.$('#app').innerHTML = html; return; }
+  /* stats */
+  const last = log[0], week = log.filter(e => e.wake.slice(0, 10) > K.addDays(K.ymd(), -7));
+  const avg = week.length ? Math.round(week.reduce((a, e) => a + K.sleepMins(e), 0) / week.length) : 0;
+  const debt = week.reduce((a, e) => a + (c.goal * 60 - K.sleepMins(e)), 0);
+  const bedAvg = week.length ? (() => { const ms = week.map(e => { const d = new Date(e.bed); let m = d.getHours() * 60 + d.getMinutes(); if (m < 12 * 60) m += 24 * 60; return m; }); const a = Math.round(ms.reduce((x, y) => x + y, 0) / ms.length) % (24 * 60); return K.pad(Math.floor(a / 60)) + ':' + K.pad(a % 60); })() : '–';
+  html += `<div class="grid2"><div class="stat"><div class="k">Last night</div><div class="v num">${fmtH(K.sleepMins(last))}</div><div class="s">${last.bed.slice(11)} → ${last.wake.slice(11)} ${last.q ? '· ' + '★'.repeat(last.q) : ''}</div></div>
+    <div class="stat"><div class="k">7-day average</div><div class="v num" style="color:${avg >= c.goal * 60 - 15 ? 'var(--good)' : 'var(--warn)'}">${fmtH(avg)}</div><div class="s">goal ${c.goal} h · usual bedtime ${bedAvg}</div></div></div>`;
+  html += `<div class="card"><div class="k">Sleep debt this week</div><div class="big num" style="color:${debt > 60 ? 'var(--bad)' : 'var(--good)'}">${debt > 0 ? fmtH(Math.round(debt)) + ' short' : 'None 🎉'}</div>
+    <div class="muted small">${debt > 120 ? 'Try going to bed 30 minutes earlier for a few nights.' : debt > 0 ? 'Almost there. One early night fixes it.' : 'You’re sleeping enough. Nice.'}</div></div>`;
+  /* chart, last 14 nights */
+  const max = Math.max(c.goal * 60 + 60, ...log.slice(0, 14).map(K.sleepMins));
+  let cols = '';
+  for (let i = 13; i >= 0; i--) {
+    const d = K.addDays(K.ymd(), -i), e = log.find(x => x.wake.slice(0, 10) === d), m = e ? K.sleepMins(e) : 0;
+    cols += `<div class="col" title="${d}: ${e ? fmtH(m) : 'no data'}"><i class="${!e ? 'none' : m < c.goal * 60 - 60 ? 'low' : ''}" style="height:${m / max * 100}%"></i><span>${K.DAYS_SHORT[K.fromYmd(d).getDay()][0]}</span></div>`;
+  }
+  html += `<div class="card"><div class="k">Last 14 nights</div><div class="chart">${cols}<div class="goal" style="bottom:calc(${c.goal * 60 / max * 100}% * (130 - 18) / 130 + 18px)"></div></div></div>`;
+  html += `<div class="sec">History</div><div class="list">${log.slice(0, 30).map(e => `<button class="item" type="button" data-edit="${e.id}" style="width:100%"><span class="body"><span class="title">${esc(K.fmtDay(e.wake.slice(0, 10), true))}</span>
+    <span class="meta"><span>${e.bed.slice(11)} → ${e.wake.slice(11)}</span>${e.q ? `<span class="stars">${'★'.repeat(e.q)}${'☆'.repeat(5 - e.q)}</span>` : ''}${e.note ? `<span>${esc(e.note)}</span>` : ''}</span></span>
+    <span class="right num" style="color:${K.sleepMins(e) < c.goal * 60 - 60 ? 'var(--bad)' : 'var(--ink)'}">${fmtH(K.sleepMins(e))}</span></button>`).join('')}</div>`;
+  K.$('#app').innerHTML = html;
+}
+
+function edit(e, afterWake) {
+  const isNew = !e;
+  if (!e) { const w = new Date(); const b = new Date(w.getTime() - K.sleepCfg().goal * 36e5); e = { id: K.uid(), bed: local(b), wake: local(w), q: 3, note: '' }; }
+  K.form({
+    title: afterWake ? 'Good morning ☀️' : isNew ? 'Add a night' : 'Edit night',
+    fields: [
+      { k: 'bed', label: 'Fell asleep', type: 'datetime-local', value: e.bed, required: true },
+      { k: 'wake', label: 'Woke up', type: 'datetime-local', value: e.wake, required: true },
+      { k: 'q', label: 'How did you sleep?', type: 'seg', value: String(e.q || 3), options: [['1', '😫'], ['2', '😕'], ['3', '😐'], ['4', '🙂'], ['5', '😄']] },
+      { k: 'note', label: 'Note', value: e.note, placeholder: 'e.g. woke up at night, late screen time' },
+    ],
+    save(v) {
+      if (v.wake <= v.bed) { K.toast('Waking up has to be after falling asleep'); return false; }
+      const m = Math.round((new Date(v.wake) - new Date(v.bed)) / 60000);
+      if (m > 20 * 60) { K.toast('That’s more than 20 hours. Check the dates.'); return false; }
+      Object.assign(e, { bed: v.bed, wake: v.wake, q: +v.q, note: v.note }); S.upsert(e); render();
+      if (afterWake) K.toast(`You slept ${fmtH(m)}`);
+    },
+    del: isNew ? null : () => { S.remove(e.id); render(); K.toast('Deleted', () => { S.upsert(e); render(); }); },
+  });
+}
+function settings() {
+  const c = K.sleepCfg();
+  K.form({
+    title: 'Sleep settings',
+    fields: [
+      { k: 'goal', label: 'Sleep goal (hours)', type: 'number', value: c.goal, hint: 'Teenagers need about 8–10 hours. Adults 7–9.' },
+      { k: 'wakeBefore', label: 'Minutes between waking up and your first lesson', type: 'number', value: c.wakeBefore, hint: 'Getting ready plus the bus. Used for your bedtime.' },
+      { k: 'wakeDefault', label: 'Wake time on days without school', type: 'time', value: c.wakeDefault || '08:00' },
+      { k: 'remind', label: '🔔 Remind me 30 minutes before bedtime', type: 'checkbox', value: c.remind },
+    ],
+    save(v) { if (!(v.goal >= 4 && v.goal <= 12)) { K.toast('Pick a goal between 4 and 12 hours'); return false; } K.put('sleepcfg', Object.assign(c, v)); if (v.remind && !K.notifyOn()) K.askNotify(); render(); },
+  });
+}
+
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('button'); if (!b) return; const a = b.dataset.act;
+  if (a === 'bed') { K.put('sleep.pending', local(new Date())); render(); K.toast('Sleep well 🌙'); }
+  else if (a === 'wake') { const p = K.get('sleep.pending'); localStorage.removeItem('hub.sleep.pending');
+    const e = { id: K.uid(), bed: p, wake: local(new Date()), q: 3, note: '' };
+    if ((Date.now() - new Date(p)) / 36e5 <= 16) S.upsert(e);   /* normal night: save now, the form only adds details */
+    else K.toast('That’s a very long night. Check the times.');
+    render(); edit(e, true); }
+  else if (a === 'cancelBed') { localStorage.removeItem('hub.sleep.pending'); render(); }
+  else if (a === 'settings') settings();
+  else if (b.dataset.edit) edit(S.byId(b.dataset.edit));
+  else if (b.id === 'fab') edit();
+});
+K.$('#fab').innerHTML = svg('plus');
+render();
+setInterval(() => { if (K.get('sleep.pending')) render(); }, 60000);
+</script>
+</body>
+</html>

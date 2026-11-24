@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Money · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js" data-private="1"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .mhead { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .mhead h2 { flex: 1; margin: 0; font-size: 18px; font-weight: 800; text-align: center; }
+  .in { color: var(--good); }
+  .catrow { padding: 10px 14px; border-top: 1px solid var(--line); display: block; width: 100%; text-align: left; }
+  .catrow:first-child { border-top: 0; }
+  .catrow .top { display: flex; justify-content: space-between; gap: 10px; font-weight: 600; margin-bottom: 6px; }
+  .catrow .top span:last-child { font-variant-numeric: tabular-nums; }
+  .progress.over i { background: var(--bad); }
+  .stack { display: flex; height: 12px; border-radius: 99px; overflow: hidden; background: var(--surface-2); margin: 10px 0 8px; }
+  .stack i { height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+  .legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--dot); margin-right: 5px; }
+</style>
+</head>
+<body style="--c:#3ecf9a">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="Add"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg, eur } = K;
+const OUT = [['Food & drinks', '🍔', /kebab|mc|burger|pizza|snack|lunch|döner|doner|subway|kfc|frites|patat|coffee|koffie|starbucks|monster|drink|broodje|food|eten/i],
+  ['Groceries', '🛒', /albert|ah\b|jumbo|lidl|aldi|plus\b|dirk|grocer|boodschap/i], ['Transport', '🚌', /bus|ov|ns\b|train|trein|metro|ret\b|fiets|bike|benzine|fuel|uber/i],
+  ['Going out', '🎉', /cinema|bios|party|feest|club|bowling|concert|ticket/i], ['Clothes', '👕', /shirt|shoes|schoen|jacket|jas|broek|pants|hoodie|zara|h&m|nike|adidas|kleding/i],
+  ['Gaming', '🎮', /game|steam|psn|playstation|xbox|nintendo|fortnite|v-?bucks|robux|roblox/i], ['Subscriptions', '📱', /spotify|netflix|disney|youtube|abonnement|subscription|icloud|prime/i],
+  ['Gym & health', '💪', /gym|basic.?fit|protein|whey|creatine|supplement/i], ['School', '📚', /book|boek|school|pen|schrift|laptop|printer/i], ['Gifts', '🎁', /gift|cadeau|present/i], ['Other', '💸', /$^/]];
+const IN = [['Job', '💼', /salary|salaris|loon|job|werk|shift/i], ['Pocket money', '👛', /pocket|zakgeld/i], ['Gift', '🎁', /gift|cadeau|birthday|verjaardag/i], ['Sold something', '🏷️', /sold|verkocht|marktplaats|vinted/i], ['Other', '💰', /$^/]];
+const catOf = (list, text) => (list.find(c => c[2].test(text)) || list[list.length - 1])[0];
+const emo = (type, c) => ((type === 'in' ? IN : OUT).find(x => x[0] === c) || ['', '💸'])[1];
+const COLORS = ['#3ecf9a', '#56ccf2', '#8b7cff', '#f25f8a', '#ffcf5c', '#f2994a', '#ff7b7b', '#b48cff', '#5db3e4', '#c9b37e', '#9097a8'];
+const TABS = [['month', 'Month'], ['budgets', 'Budgets'], ['savings', 'Savings'], ['subs', 'Subscriptions']];
+let tab = TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : 'month';
+let ym = K.ymd().slice(0, 7);
+
+function monthTx(m = ym) { return K.money.all().filter(t => String(t.date).slice(0, 7) === m); }
+function render() {
+  let html = K.header('Money', 'money') + `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}</button>`).join('')}</div>`;
+  html += ({ month: monthHtml, budgets: budgetsHtml, savings: savingsHtml, subs: subsHtml })[tab]();
+  K.$('#app').innerHTML = html;
+}
+
+/* ---------- month ---------- */
+function monthHtml() {
+  const tx = monthTx(), [y, m] = ym.split('-').map(Number);
+  const out = tx.filter(t => t.type !== 'in').reduce((a, t) => a + K.num(t.amount), 0), inn = tx.filter(t => t.type === 'in').reduce((a, t) => a + K.num(t.amount), 0);
+  let html = `<form class="quick" id="quick" autocomplete="off"><input id="q" placeholder="5,50 kebab  ·  +20 pocket money" aria-label="Quick add spending or income" inputmode="text"><button class="btn primary" type="submit" aria-label="Add">${svg('plus', 'width="18" height="18"')}</button></form>
+    <div class="mhead"><button class="iconbtn" type="button" data-m="-1" aria-label="Previous month">${svg('left')}</button><h2>${K.MONTHS[m - 1]} ${y}</h2><button class="iconbtn" type="button" data-m="1" aria-label="Next month">${svg('right')}</button></div>
+    <div class="grid2"><div class="stat"><div class="k">Spent</div><div class="v num">${eur(out)}</div><div class="s">${tx.filter(t => t.type !== 'in').length} payments</div></div>
+    <div class="stat"><div class="k">Came in</div><div class="v num in">${eur(inn)}</div><div class="s">${inn - out >= 0 ? 'Left over ' + eur(inn - out) : 'Short ' + eur(out - inn)}</div></div></div>`;
+  if (out) {
+    const by = {}; tx.filter(t => t.type !== 'in').forEach(t => by[t.cat] = (by[t.cat] || 0) + K.num(t.amount));
+    const cats = Object.entries(by).sort((a, b) => b[1] - a[1]);
+    html += `<div class="card"><div class="k">Where it went</div><div class="stack">${cats.map(([c, v], i) => `<i style="width:${v / out * 100}%;background:${COLORS[i % COLORS.length]}" title="${esc(c)}"></i>`).join('')}</div>
+      <div class="legend">${cats.map(([c, v], i) => `<span style="--dot:${COLORS[i % COLORS.length]}">${esc(c)} ${eur(v)}</span>`).join('')}</div></div>`;
+  }
+  if (!tx.length) return html + `<div class="empty"><b>Nothing logged in ${K.MONTHS[m - 1]}</b>Type an amount and what it was for, like <b>4,20 lunch</b>. Put a + in front for money that came in, like <b>+20 pocket money</b>.</div>`;
+  const days = {}; tx.forEach(t => (days[t.date] = days[t.date] || []).push(t));
+  for (const d of Object.keys(days).sort().reverse()) {
+    const sum = days[d].reduce((a, t) => a + (t.type === 'in' ? 1 : -1) * K.num(t.amount), 0);
+    html += `<div class="sec">${esc(K.fmtDay(d, true))}<span class="act num" style="color:var(--muted)">${sum >= 0 ? '+' : '−'}${eur(Math.abs(sum))}</span></div><div class="list">${days[d].map(txRow).join('')}</div>`;
+  }
+  return html;
+}
+function txRow(t) {
+  return `<button class="item" type="button" data-tx="${t.id}" style="width:100%"><span style="font-size:20px;width:26px;text-align:center">${emo(t.type, t.cat)}</span>
+    <span class="body"><span class="title">${esc(t.note || t.cat)}</span><span class="meta"><span>${esc(t.cat)}</span></span></span>
+    <span class="right num ${t.type === 'in' ? 'in' : ''}">${t.type === 'in' ? '+' : '−'}${eur(t.amount)}</span></button>`;
+}
+function quickAdd(text) {
+  const m = text.trim().match(/^([+-]?)\s*€?\s*(\d+(?:[.,]\d{1,2})?)\s*(.*)$/) || text.trim().match(/^(.*?)\s*([+-]?)\s*€?\s*(\d+(?:[.,]\d{1,2})?)$/);
+  if (!m) { K.toast('Start with the amount, e.g. 4,20 lunch'); return false; }
+  let sign, amount, note;
+  if (/^\d|^[+-]/.test(text.trim()) || text.trim().startsWith('€')) { sign = m[1]; amount = K.num(m[2]); note = m[3]; } else { note = m[1]; sign = m[2]; amount = K.num(m[3]); }
+  if (!(amount > 0)) { K.toast('That amount isn’t right'); return false; }
+  note = (note || '').trim();
+  const type = sign === '+' || /^(pocket money|zakgeld|salary|salaris|loon)/i.test(note) ? 'in' : 'out';
+  const t = K.money.upsert({ id: K.uid(), type, amount, note, cat: catOf(type === 'in' ? IN : OUT, note), date: ym === K.ymd().slice(0, 7) ? K.ymd() : ym + '-01' });
+  checkBudget(t);
+  return true;
+}
+function checkBudget(t) {
+  if (t.type === 'in') return K.toast(`+${eur(t.amount)} added`);
+  const b = K.num((K.get('budgets', {}) || {})[t.cat]);
+  if (!b) return K.toast(`${eur(t.amount)} · ${t.cat}`);
+  const used = monthTx(t.date.slice(0, 7)).filter(x => x.type !== 'in' && x.cat === t.cat).reduce((a, x) => a + K.num(x.amount), 0);
+  K.toast(used > b ? `⚠️ Over your ${t.cat} budget by ${eur(used - b)}` : used > b * .8 ? `Careful: ${eur(b - used)} left for ${t.cat}` : `${eur(b - used)} left for ${t.cat} this month`);
+}
+function editTx(t, type) {
+  const isNew = !t;
+  t = t || { id: K.uid(), type: type || 'out', amount: '', note: '', cat: '', date: ym === K.ymd().slice(0, 7) ? K.ymd() : ym + '-01' };
+  const cats = () => (t.type === 'in' ? IN : OUT).map(c => [c[0], c[1] + ' ' + c[0]]);
+  const f = K.form({
+    title: isNew ? (t.type === 'in' ? 'Money in' : 'Spent') : 'Edit',
+    fields: [
+      { k: 'type', label: 'Type', type: 'seg', value: t.type, options: [['out', 'Spent'], ['in', 'Money in']] },
+      { k: 'amount', label: 'Amount (€)', type: 'number', value: t.amount, required: true, half: true },
+      { k: 'date', label: 'Date', type: 'date', value: t.date, half: true },
+      { k: 'note', label: 'What for', value: t.note },
+      { k: 'cat', label: 'Category', type: 'select', value: t.cat || cats()[0][0], options: cats() },
+    ],
+    change(v, form) {
+      if (v.type !== t.type) { t.type = v.type; form.elements.cat.innerHTML = cats().map(([a, b]) => `<option value="${esc(a)}">${esc(b)}</option>`).join(''); }
+      if (isNew && v.note && document.activeElement === form.elements.note) form.elements.cat.value = catOf(t.type === 'in' ? IN : OUT, v.note);
+    },
+    save(v) { if (!(v.amount > 0)) { K.toast('Fill in an amount'); return false; } Object.assign(t, v); K.money.upsert(t); render(); if (isNew) checkBudget(t); },
+    del: isNew ? null : () => { K.money.remove(t.id); render(); K.toast('Deleted', () => { K.money.upsert(t); render(); }); },
+  });
+}
+
+/* ---------- budgets ---------- */
+function budgetsHtml() {
+  const b = K.get('budgets', {}) || {}, tx = monthTx(K.ymd().slice(0, 7)).filter(t => t.type !== 'in');
+  const day = new Date().getDate(), dim = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+  const total = Object.values(b).reduce((a, v) => a + K.num(v), 0), spent = tx.filter(t => b[t.cat]).reduce((a, t) => a + K.num(t.amount), 0);
+  let html = `<div class="card hl"><div class="k">This month · day ${day} of ${dim}</div><div class="big num">${eur(Math.max(0, total - spent))} left</div>
+    <div class="progress ${spent > total ? 'over' : ''}" style="margin-top:8px"><i style="width:${total ? Math.min(100, spent / total * 100) : 0}%"></i></div>
+    <div class="muted small" style="margin-top:6px">${total ? `${eur(spent)} of ${eur(total)} budget · about ${eur(Math.max(0, total - spent) / (dim - day + 1))} a day for the rest of the month` : 'Set a budget for the categories you want to keep an eye on.'}</div></div>`;
+  html += `<div class="list">${OUT.map(([c, e]) => {
+    const lim = K.num(b[c]), used = tx.filter(t => t.cat === c).reduce((a, t) => a + K.num(t.amount), 0);
+    return `<button class="catrow" type="button" data-budget="${esc(c)}"><div class="top"><span>${e} ${esc(c)}</span><span class="${lim && used > lim ? 'late' : 'muted'}" style="${lim && used > lim ? 'color:var(--bad)' : ''}">${eur(used)}${lim ? ' / ' + eur(lim) : ''}</span></div>
+      ${lim ? `<div class="progress ${used > lim ? 'over' : ''}"><i style="width:${Math.min(100, used / lim * 100)}%"></i></div>` : '<div class="small muted">No budget · tap to set one</div>'}</button>`;
+  }).join('')}</div>`;
+  return html;
+}
+function editBudget(c) {
+  const b = K.get('budgets', {}) || {};
+  K.form({ title: `${emo('out', c)} ${c} budget`, fields: [{ k: 'v', label: 'Per month (€)', type: 'number', value: b[c] || '', hint: 'Empty = no budget' }],
+    save(v) { if (v.v) b[c] = v.v; else delete b[c]; K.put('budgets', b); render(); } });
+}
+
+/* ---------- savings goals ---------- */
+function savingsHtml() {
+  const gs = K.savings.all();
+  const wish = K.wish.all().filter(w => !w.bought && K.num(w.price));
+  let html = '';
+  if (!gs.length && !wish.length) return `<div class="empty"><b>Save up for something</b>Make a goal like “New phone €400” and add money as you save it.</div>`;
+  html += `<div class="list">${gs.map(g => {
+    const pct = Math.min(100, K.num(g.saved) / K.num(g.target) * 100 || 0);
+    return `<div class="item"><button class="body" type="button" data-goal="${g.id}"><span class="title">${esc(g.emoji || '🎯')} ${esc(g.name)}</span>
+      <span class="meta"><span>${eur(g.saved || 0)} of ${eur(g.target)}</span><span>${Math.round(pct)}%</span>${g.by ? `<span>by ${esc(K.fmtDay(g.by))}${perWeek(g)}</span>` : ''}</span>
+      <div class="progress" style="margin-top:7px"><i style="width:${pct}%"></i></div></button>
+      <button class="btn sm" type="button" data-add="${g.id}" aria-label="Add money to ${esc(g.name)}">+ €</button></div>`;
+  }).join('')}</div>`;
+  if (wish.length) html += `<div class="sec">From your wishlist<a class="act" href="../shopping/#wishlist">Open</a></div><div class="list">${wish.map(w => `<a class="item" href="../shopping/#wishlist" style="text-decoration:none"><span class="body"><span class="title">${esc(w.name)}</span><span class="meta"><span>${eur(w.saved || 0)} of ${eur(w.price)}</span></span><div class="progress" style="margin-top:7px"><i style="width:${Math.min(100, K.num(w.saved) / K.num(w.price) * 100)}%"></i></div></span></a>`).join('')}</div>`;
+  return html;
+}
+function perWeek(g) { const weeks = K.daysUntil(g.by) / 7, left = K.num(g.target) - K.num(g.saved); return weeks > 0 && left > 0 ? ` · ${eur(left / weeks)}/week` : ''; }
+function editGoal(g) {
+  const isNew = !g; g = g || { id: K.uid(), name: '', emoji: '🎯', target: '', saved: 0, by: '' };
+  K.form({ title: isNew ? 'New savings goal' : 'Edit goal', fields: [
+      { k: 'emoji', label: 'Icon', value: g.emoji, half: true, attrs: 'maxlength="4" style="font-size:20px;text-align:center"' }, { k: 'name', label: 'Saving for', value: g.name, required: true, half: true },
+      { k: 'target', label: 'Goal (€)', type: 'number', value: g.target, required: true, half: true }, { k: 'saved', label: 'Saved so far (€)', type: 'number', value: g.saved, half: true },
+      { k: 'by', label: 'Want it by (optional)', type: 'date', value: g.by }],
+    save(v) { Object.assign(g, v, { saved: v.saved || 0 }); K.savings.upsert(g); render(); },
+    del: isNew ? null : () => { K.savings.remove(g.id); render(); } });
+}
+
+/* ---------- subscriptions ---------- */
+function subsHtml() {
+  const ss = K.subs.all().sort((a, b) => (+a.day || 0) - (+b.day || 0));
+  const monthly = ss.reduce((a, s) => a + (s.cycle === 'yearly' ? K.num(s.amount) / 12 : K.num(s.amount)), 0);
+  if (!ss.length) return `<div class="empty"><b>Track your subscriptions</b>Spotify, Netflix, the gym, your phone. You get a reminder the day before each one is paid.</div>`;
+  return `<div class="grid2"><div class="stat"><div class="k">Per month</div><div class="v num">${eur(monthly)}</div></div><div class="stat"><div class="k">Per year</div><div class="v num">${eur(monthly * 12)}</div></div></div>
+    <div class="list">${ss.map(s => `<button class="item" type="button" data-sub="${s.id}" style="width:100%"><span class="body"><span class="title">${esc(s.name)}</span>
+      <span class="meta"><span>${s.cycle === 'yearly' ? `Every year · ${K.MONTHS[(+s.month || 1) - 1].slice(0, 3)} ${s.day}` : `Every month on the ${s.day}${['st', 'nd', 'rd'][((+s.day + 90) % 100 - 10) % 10 - 1] || 'th'}`}</span></span></span>
+      <span class="right num">${eur(s.amount)}</span></button>`).join('')}</div><p class="hint">🔔 You get a reminder at 19:00 the day before each payment.</p>`;
+}
+function editSub(s) {
+  const isNew = !s; s = s || { id: K.uid(), name: '', amount: '', day: new Date().getDate(), cycle: 'monthly', month: new Date().getMonth() + 1 };
+  K.form({ title: isNew ? 'Add subscription' : 'Edit subscription', fields: [
+      { k: 'name', label: 'Name', value: s.name, required: true, placeholder: 'e.g. Spotify' },
+      { k: 'amount', label: 'Amount (€)', type: 'number', value: s.amount, required: true, half: true }, { k: 'cycle', label: 'Paid', type: 'select', value: s.cycle, options: [['monthly', 'Every month'], ['yearly', 'Every year']], half: true },
+      { k: 'day', label: 'Day of the month', type: 'number', value: s.day, half: true }, { k: 'month', label: 'Month (yearly only)', type: 'select', value: String(s.month || 1), options: K.MONTHS.map((m, i) => [String(i + 1), m]), half: true }],
+    save(v) { if (!(v.day >= 1 && v.day <= 31)) { K.toast('Day must be 1 to 31'); return false; } Object.assign(s, v, { month: +v.month }); K.subs.upsert(s); render(); if (!K.notifyOn()) K.askNotify(); },
+    del: isNew ? null : () => { K.subs.remove(s.id); render(); } });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+  if (d.tab) { tab = d.tab; history.replaceState(null, '', '#' + tab); render(); }
+  else if (d.m) { const [y, m] = ym.split('-').map(Number); ym = K.ymd(new Date(y, m - 1 + +d.m, 1)).slice(0, 7); render(); }
+  else if (d.tx) editTx(K.money.byId(d.tx));
+  else if (d.budget) editBudget(d.budget);
+  else if (d.goal) editGoal(K.savings.byId(d.goal));
+  else if (d.add) { const g = K.savings.byId(d.add); const v = K.num(prompt(`How much did you put aside for ${g.name}? (€)`) || 0); if (v) { g.saved = K.num(g.saved) + v; K.savings.upsert(g); render(); K.toast(g.saved >= K.num(g.target) ? `🎉 Goal reached: ${g.name}!` : `${eur(K.num(g.target) - g.saved)} to go`); } }
+  else if (d.sub) editSub(K.subs.byId(d.sub));
+  else if (b.id === 'fab') ({ month: () => editTx(), budgets: () => editTx(), savings: () => editGoal(), subs: () => editSub() })[tab]();
+});
+document.addEventListener('submit', e => { if (e.target.id !== 'quick') return; e.preventDefault(); if (quickAdd(K.$('#q').value)) { render(); K.$('#q').focus(); } });
+K.$('#fab').innerHTML = svg('plus');
+render();
+</script>
+</body>
+</html>

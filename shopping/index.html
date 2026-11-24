@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shopping · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
+  .chips button { padding: 6px 11px; border-radius: 999px; background: var(--surface); border: 1px dashed var(--line); font-size: 13px; font-weight: 600; color: var(--muted); }
+  .qty { font-weight: 800; color: var(--c); margin-right: 4px; }
+  .wish .price { font-weight: 800; font-size: 16px; }
+  .wish .progress { margin-top: 7px; }
+</style>
+</head>
+<body style="--c:#6fdc8c">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="Add"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+let tab = location.hash.slice(1) === 'wishlist' ? 'wishlist' : 'groceries';
+const CATS = [
+  ['🥦 Fruit & veg', /apple|appel|banan|fruit|veg|groente|tomat|sla|lettuce|salad|onion|ui\b|ui$|paprika|komkommer|cucumber|carrot|wortel|potato|aardappel|broccoli|spinach|spinazie|avocado|lemon|citroen|berries|aardbei|druif|grape|mango|peer|pear/i],
+  ['🥛 Dairy & eggs', /milk|melk|cheese|kaas|yog|kwark|quark|butter|boter|egg|ei(eren)?\b|cream|room|skyr/i],
+  ['🍞 Bread & grains', /bread|brood|bagel|wrap|rice|rijst|pasta|oat|haver|cereal|muesli|cracker|beschuit|tortilla|noodle/i],
+  ['🥩 Meat & fish', /chicken|kip|beef|rund|gehakt|mince|meat|vlees|fish|vis|salmon|zalm|tuna|tonijn|ham|bacon|worst|sausage|turkey|kalkoen/i],
+  ['🥤 Drinks', /water|cola|juice|sap|coffee|koffie|tea|thee|monster|red ?bull|energy|drink|fris|ice tea|beer|bier/i],
+  ['🍫 Snacks', /chips|chocola|chocolate|candy|snoep|koek|cookie|biscuit|nuts|noten|popcorn|ijs\b|ice cream|protein bar|reep/i],
+  ['🧴 Household', /soap|zeep|shampoo|tooth|tand|deo|toilet|wc|paper|papier|wasmiddel|detergent|sponge|spons|trash|vuilniszak|batter|tissue|tandpasta/i],
+  ['💪 Supplements', /protein|whey|creatine|vitamin|vitamine|pre.?workout|omega|magnes/i],
+];
+function cat(name) { for (const [c, re] of CATS) if (re.test(name)) return c; return '🛒 Other'; }
+function parseItem(text) {
+  const m = text.trim().match(/^(\d+(?:[.,]\d+)?\s*(?:x|kg|g|l|ml|st|stuks|pack|packs)?)\s+(.+)$/i) || text.trim().match(/^(.+?)\s+[x×](\d+)$/i);
+  if (!m) return { name: text.trim(), qty: '' };
+  return /^\d/.test(m[1]) ? { name: m[2].trim(), qty: m[1].replace(/\s+/g, '') } : { name: m[1].trim(), qty: m[2] };
+}
+
+function render() {
+  const g = K.shop.all(), w = K.wish.all();
+  let html = K.header('Shopping', 'shopping') + `<div class="tabs">
+    <button type="button" data-tab="groceries" aria-pressed="${tab === 'groceries'}">Groceries<span class="n">${g.filter(x => !x.done).length || ''}</span></button>
+    <button type="button" data-tab="wishlist" aria-pressed="${tab === 'wishlist'}">Wishlist<span class="n">${w.filter(x => !x.bought).length || ''}</span></button></div>`;
+  html += tab === 'groceries' ? groceries(g) : wishlist(w);
+  K.$('#app').innerHTML = html;
+  K.$('#fab').hidden = tab === 'groceries';
+}
+
+function groceries(g) {
+  let html = `<form class="quick" id="quick" autocomplete="off"><input id="q" placeholder="Add… e.g. 2 milk, bananas" aria-label="Add grocery"><button class="btn primary" type="submit" aria-label="Add">${svg('plus', 'width="18" height="18"')}</button></form>`;
+  const have = new Set(g.filter(x => !x.done).map(x => x.name.toLowerCase()));
+  const recent = (K.get('shop.recent', []) || []).filter(n => !have.has(n.toLowerCase())).slice(0, 10);
+  if (recent.length) html += `<div class="chips">${recent.map(n => `<button type="button" data-re="${esc(n)}">+ ${esc(n)}</button>`).join('')}</div>`;
+  const open = g.filter(x => !x.done), done = g.filter(x => x.done);
+  if (!g.length) return html + `<div class="empty"><b>Your list is empty</b>Type what you need. It’s sorted by aisle automatically.</div>`;
+  const groups = {}; open.forEach(x => (groups[x.cat] = groups[x.cat] || []).push(x));
+  const order = CATS.map(c => c[0]).concat('🛒 Other');
+  for (const c of Object.keys(groups).sort((a, b) => order.indexOf(a) - order.indexOf(b)))
+    html += `<div class="sec">${esc(c)}</div><div class="list">${groups[c].map(item).join('')}</div>`;
+  if (!open.length) html += `<div class="empty" style="padding:20px"><b>Got everything 🎉</b></div>`;
+  if (done.length) html += `<div class="sec">In the cart · ${done.length}<button class="act" type="button" data-act="clear">Clear</button></div><div class="list">${done.map(item).join('')}</div>`;
+  return html;
+}
+function item(x) {
+  return `<div class="item ${x.done ? 'done' : ''}"><button class="check ${x.done ? 'on' : ''}" type="button" data-tog="${x.id}" aria-label="${x.done ? 'Put back' : 'Got it'}: ${esc(x.name)}">${svg('check')}</button>
+    <button class="body" type="button" data-edit="${x.id}"><span class="title">${x.qty ? `<span class="qty">${esc(x.qty)}</span>` : ''}${esc(x.name)}</span>${x.note ? `<span class="meta">${esc(x.note)}</span>` : ''}</button></div>`;
+}
+function addGrocery(text) {
+  const p = parseItem(text); if (!p.name) return;
+  const ex = K.shop.all().find(x => !x.done && x.name.toLowerCase() === p.name.toLowerCase());
+  if (ex) { K.toast(`${p.name} is already on the list`); return; }
+  K.shop.upsert({ id: K.uid(), name: p.name, qty: p.qty, cat: cat(p.name), done: false });
+  const r = (K.get('shop.recent', []) || []).filter(n => n.toLowerCase() !== p.name.toLowerCase()); r.unshift(p.name); K.put('shop.recent', r.slice(0, 30));
+}
+function editGrocery(x) {
+  K.form({ title: 'Edit item', fields: [
+      { k: 'name', label: 'Item', value: x.name, required: true, half: true }, { k: 'qty', label: 'Amount', value: x.qty, half: true },
+      { k: 'cat', label: 'Aisle', type: 'select', value: x.cat, options: CATS.map(c => c[0]).concat('🛒 Other') }, { k: 'note', label: 'Note', value: x.note || '', placeholder: 'e.g. the 0% one' }],
+    save(v) { Object.assign(x, v); K.shop.upsert(x); render(); },
+    del: () => { K.shop.remove(x.id); render(); } });
+}
+
+function wishlist(w) {
+  const open = w.filter(x => !x.bought).sort((a, b) => (b.prio || 0) - (a.prio || 0)), got = w.filter(x => x.bought);
+  if (!w.length) return `<div class="empty"><b>Things you want to buy</b>Add them here with a price. Track how much you’ve saved for each one.</div>`;
+  const total = open.reduce((a, x) => a + K.num(x.price), 0), saved = open.reduce((a, x) => a + Math.min(K.num(x.saved), K.num(x.price) || Infinity), 0);
+  let html = `<div class="grid2"><div class="stat"><div class="k">Wishlist total</div><div class="v num">${K.eur(total)}</div><div class="s">${K.plural(open.length, 'item')}</div></div>
+    <div class="stat"><div class="k">Saved so far</div><div class="v num" style="color:var(--good)">${K.eur(saved)}</div><div class="s">${total ? Math.round(saved / total * 100) : 0}% of it</div></div></div>`;
+  html += `<div class="list">${open.map(x => {
+    const pct = K.num(x.price) ? Math.min(100, K.num(x.saved) / K.num(x.price) * 100) : 0;
+    return `<div class="item wish"><button class="body" type="button" data-wish="${x.id}">
+      <span class="title">${'⭐'.repeat(x.prio || 0)}${x.prio ? ' ' : ''}${esc(x.name)}</span>
+      <span class="meta">${x.price ? `<span>${K.eur(x.saved || 0)} of ${K.eur(x.price)} saved</span>` : '<span>No price yet</span>'}${x.link ? '<span>🔗 link</span>' : ''}</span>
+      ${x.price ? `<div class="progress"><i style="width:${pct}%"></i></div>` : ''}</button>
+      <span class="right"><span class="price num">${x.price ? K.eur(x.price) : ''}</span>${x.link ? `<br><a class="small" href="${esc(x.link)}" target="_blank" rel="noopener" style="color:var(--c)">Open</a>` : ''}</span></div>`;
+  }).join('')}</div>`;
+  if (got.length) html += `<div class="sec">Bought</div><div class="list">${got.map(x => `<button class="item done" type="button" data-wish="${x.id}" style="width:100%"><span class="body title">${esc(x.name)}</span><span class="right num muted">${x.price ? K.eur(x.price) : ''}</span></button>`).join('')}</div>`;
+  return html;
+}
+function editWish(x) {
+  const isNew = !x; x = x || { id: K.uid(), name: '', price: '', saved: 0, link: '', prio: 1, bought: false };
+  K.form({ title: isNew ? 'Add to wishlist' : 'Edit wish', fields: [
+      { k: 'name', label: 'What', value: x.name, required: true },
+      { k: 'price', label: 'Price (€)', type: 'number', value: x.price, half: true }, { k: 'saved', label: 'Saved for it (€)', type: 'number', value: x.saved, half: true },
+      { k: 'prio', label: 'How much do you want it?', type: 'seg', value: String(x.prio || 0), options: [['0', 'Maybe'], ['1', '⭐'], ['2', '⭐⭐'], ['3', '⭐⭐⭐']] },
+      { k: 'link', label: 'Link', type: 'url', value: x.link, placeholder: 'https://…' },
+      ...(isNew ? [] : [{ k: 'bought', label: 'I bought it', type: 'checkbox', value: x.bought }]),
+    ],
+    save(v) {
+      if (v.link && !/^https?:\/\//i.test(v.link)) v.link = 'https://' + v.link;
+      const was = x.bought; Object.assign(x, v, { prio: +v.prio, saved: v.saved || 0 }); K.wish.upsert(x); render();
+      if (x.bought && !was) K.toast(`Enjoy your ${x.name}! 🎉`);
+    },
+    del: isNew ? null : () => { K.wish.remove(x.id); render(); } });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+  if (d.tab) { tab = d.tab; history.replaceState(null, '', '#' + tab); render(); }
+  else if (d.tog) { const x = K.shop.byId(d.tog); x.done = !x.done; K.shop.upsert(x); render(); if (navigator.vibrate) navigator.vibrate(20); }
+  else if (d.edit) editGrocery(K.shop.byId(d.edit));
+  else if (d.re) { addGrocery(d.re); render(); }
+  else if (d.wish) editWish(K.wish.byId(d.wish));
+  else if (d.act === 'clear') { const gone = K.shop.all().filter(x => x.done); K.shop.save(K.shop.all().filter(x => !x.done)); render(); K.toast(`Cleared ${gone.length}`, () => { K.shop.save(K.shop.all().concat(gone)); render(); }); }
+  else if (b.id === 'fab') editWish();
+});
+document.addEventListener('submit', e => {
+  if (e.target.id !== 'quick') return; e.preventDefault();
+  const v = K.$('#q').value; if (!v.trim()) return;
+  v.split(/,|\sen\s|\sand\s/).forEach(t => t.trim() && addGrocery(t));   /* "milk, eggs and bread" adds three */
+  render(); K.$('#q').focus();
+});
+K.$('#fab').innerHTML = svg('plus');
+render();
+</script>
+</body>
+</html>

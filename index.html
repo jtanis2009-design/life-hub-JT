@@ -183,6 +183,19 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
     </div>
 
     <div class="tiles">
+      <a class="tile" href="sleep/" style="--c:#9b8cff">
+        <div class="k">Sleep</div><div class="v num" id="sl-v">–</div><div class="s" id="sl-s">&nbsp;</div>
+      </a>
+      <a class="tile" href="money/" style="--c:#3ecf9a">
+        <div class="k">Spent</div><div class="v num" id="mo-v">–</div><div class="s" id="mo-s">&nbsp;</div>
+        <div class="bar"><i id="mo-b"></i></div>
+      </a>
+      <a class="tile" href="shopping/" style="--c:#6fdc8c">
+        <div class="k">Shopping</div><div class="v num" id="sh-v">–</div><div class="s" id="sh-s">&nbsp;</div>
+      </a>
+    </div>
+
+    <div class="tiles">
       <a class="tile" href="workout/" style="--c:var(--water)">
         <div class="k">Water</div><div class="v num" id="wa-v">–</div><div class="s num" id="wa-s">&nbsp;</div>
         <div class="bar"><i id="wa-b"></i></div>
@@ -226,6 +239,10 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
         <select id="pinAfter" aria-label="Lock again after">
           <option value="0">Immediately</option><option value="60">1 minute</option><option value="300">5 minutes</option><option value="900">15 minutes</option><option value="3600">1 hour</option>
         </select>
+      </div>
+      <div class="row" id="pinPrivRow" hidden>
+        <div class="t"><b>Extra lock on Notes and Money</b><small>Always asks for the PIN when you open them.</small></div>
+        <input type="checkbox" id="pinPriv" style="width:22px;height:22px;accent-color:var(--accent)" aria-label="Extra lock on Notes and Money">
       </div>
       <div class="row" id="pinOffRow" hidden>
         <div class="t"><b>Turn PIN lock off</b></div>
@@ -529,6 +546,21 @@ function drawPlan() {
     .filter(x => x.s >= d).sort((a, b) => a.s < b.s ? -1 : 1);
   if (cds.length) { const n = K.daysUntil(cds[0].s); $('#cd-v').innerHTML = n === 0 ? '🎉' : `${n}<small> ${n === 1 ? 'day' : 'days'}</small>`; $('#cd-s').textContent = `${cds[0].c.emoji || ''} ${cds[0].c.title}`.trim(); }
   else { $('#cd-v').textContent = '–'; $('#cd-s').textContent = 'Add one'; }
+  /* sleep tile */
+  const pend = K.get('sleep.pending', null), ls = K.lastSleep(), goal = K.sleepCfg().goal;
+  if (pend) { $('#sl-v').textContent = '😴'; $('#sl-s').textContent = `asleep since ${pend.slice(11)}`; }
+  else if (ls && ls.wake.slice(0, 10) >= K.addDays(d, -1)) { const m = K.sleepMins(ls); $('#sl-v').innerHTML = `${Math.floor(m / 60)}<small>h</small>${pad(m % 60)}`; $('#sl-s').textContent = m >= goal * 60 - 15 ? 'last night · goal hit' : `last night · ${(goal - m / 60).toFixed(1)} h short`; }
+  else { const b = K.bedtimeFor(K.addDays(d, new Date().getHours() < 5 ? 0 : 1)).bed; $('#sl-v').innerHTML = `${hm(b)}`; $('#sl-s').textContent = 'bedtime tonight'; }
+  /* money tile */
+  const spent = K.monthSpent(), bud = K.get('budgets', {}) || {}, budget = Object.values(bud).reduce((a, v) => a + K.num(v), 0);
+  const inBud = K.money.all().filter(t => t.type !== 'in' && String(t.date).slice(0, 7) === d.slice(0, 7) && bud[t.cat]).reduce((a, t) => a + K.num(t.amount), 0);
+  $('#mo-v').innerHTML = K.eur(spent).replace(/,(\d\d)$/, '<small>,$1</small>');
+  $('#mo-s').textContent = budget ? (inBud > budget ? 'over budget' : `${K.eur(budget - inBud)} budget left`) : 'this month';
+  $('#mo-b').style.width = (budget ? clamp01(inBud / budget) * 100 : 0) + '%'; $('#mo-b').parentElement.classList.toggle('over', !!budget && inBud > budget);
+  /* shopping tile */
+  const need = K.shop.all().filter(x => !x.done);
+  $('#sh-v').innerHTML = `${need.length}<small> items</small>`;
+  $('#sh-s').textContent = need.length ? need.slice(0, 3).map(x => x.name).join(', ') : 'list is empty';
 }
 
 /* ---------- backup reminder ---------- */
@@ -564,11 +596,11 @@ const APPS = [
   { id: 'school', name: 'School', sub: 'Timetable & homework', c: '#f2994a', href: 'school/' },
   { id: 'calendar', name: 'Calendar', sub: 'Everything by day', c: '#56ccf2', href: 'calendar/' },
   { id: 'habits', name: 'Habits', sub: 'Streaks', c: '#f25f8a', href: 'habits/' },
-  { id: 'sleep', name: 'Sleep', sub: 'Bedtime & debt', c: '#9b8cff' },
+  { id: 'sleep', name: 'Sleep', sub: 'Bedtime & debt', c: '#9b8cff', href: 'sleep/' },
   { id: 'countdown', name: 'Countdowns', sub: 'Exams, holidays', c: '#ffcf5c', href: 'countdowns/' },
-  { id: 'shopping', name: 'Shopping', sub: 'Groceries & wishlist', c: '#6fdc8c' },
-  { id: 'money', name: 'Money', sub: 'Budget & savings', c: '#3ecf9a' },
-  { id: 'notes', name: 'Notes', sub: 'Notes & journal', c: '#c9b37e' },
+  { id: 'shopping', name: 'Shopping', sub: 'Groceries & wishlist', c: '#6fdc8c', href: 'shopping/' },
+  { id: 'money', name: 'Money', sub: 'Budget & savings', c: '#3ecf9a', href: 'money/' },
+  { id: 'notes', name: 'Notes', sub: 'Notes & journal', c: '#c9b37e', href: 'notes/' },
   { id: 'ai', name: 'Assistant', sub: 'AI for everything', c: '#b48cff' },
 ];
 function drawApps() {
@@ -585,7 +617,8 @@ function drawSettings() {
   const on = Hub.hasPin();
   $('#pin-state').textContent = on ? 'PIN lock is on' : 'PIN lock is off';
   $('#pinSet').textContent = on ? 'Change PIN' : 'Set PIN';
-  $('#pinAfterRow').hidden = $('#pinOffRow').hidden = !on;
+  $('#pinAfterRow').hidden = $('#pinOffRow').hidden = $('#pinPrivRow').hidden = !on;
+  $('#pinPriv').checked = Hub.lockPrivate();
   $('#pinAfter').value = String(Hub.lockAfter());
   $('#lockBtn').hidden = !on;
   const p = get('hub.place', null);
@@ -618,6 +651,7 @@ $('#pinForm').onsubmit = async e => {
 $('#pinAfter').onchange = e => { Hub.setLockAfter(+e.target.value); toast('Saved'); };
 $('#pinOff').onclick = async () => { if (!(await askPin('Turning the PIN lock off.'))) return; Hub.clearPin(); drawSettings(); toast('PIN lock is off'); };
 $('#lockBtn').onclick = () => Hub.lockNow();
+$('#pinPriv').onchange = e => { Hub.lockPrivate(e.target.checked); toast('Saved'); };
 
 function drawNotify() {
   const on = K.notifyOn(), blocked = K.canNotify() && Notification.permission === 'denied';

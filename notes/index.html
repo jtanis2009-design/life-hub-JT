@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Notes · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js" data-private="1"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .notes { columns: 2; column-gap: 10px; }
+  .note { break-inside: avoid; display: block; width: 100%; text-align: left; background: color-mix(in srgb, var(--nc, var(--surface)) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--nc, var(--line)) 35%, var(--line)); border-radius: 16px; padding: 12px 13px; margin-bottom: 10px; }
+  .note h3 { margin: 0 0 4px; font-size: 15px; font-weight: 800; overflow-wrap: anywhere; }
+  .note p { margin: 0; font-size: 13.5px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 8; -webkit-box-orient: vertical; overflow: hidden; }
+  .note .when { font-size: 11px; color: var(--muted-2); margin-top: 8px; font-weight: 600; }
+  .search { margin-bottom: 12px; background: var(--surface); }
+  .editor textarea { min-height: 46vh; font-size: 15.5px; }
+  .editor .ttl { font-size: 18px; font-weight: 800; }
+  .moods { display: flex; gap: 3px; flex-wrap: wrap; }
+  .moods i { width: calc((100% - 29 * 3px) / 30); min-width: 7px; aspect-ratio: 1 / 2.4; border-radius: 4px; background: var(--surface-2); font-style: normal; }
+  .entry { display: block; width: 100%; text-align: left; padding: 13px 14px; border-top: 1px solid var(--line); }
+  .entry:first-child { border-top: 0; }
+  .entry .m { font-size: 22px; float: right; margin-left: 8px; }
+  .entry p { margin: 3px 0 0; font-size: 14px; color: var(--muted); white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+</head>
+<body style="--c:#c9b37e">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="New note"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+const N = K.notes;
+const MOODS = [['1', '😞'], ['2', '😕'], ['3', '😐'], ['4', '🙂'], ['5', '😄']];
+const MOODC = { 1: '#ff7b7b', 2: '#f2994a', 3: '#ffcf5c', 4: '#9ee07a', 5: '#6fdc8c' };
+let tab = location.hash.slice(1) === 'journal' ? 'journal' : 'notes', q = '';
+
+function ago(t) { const m = Math.round((Date.now() - t) / 60000); if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; if (m < 1440) return Math.round(m / 60) + ' h ago'; return K.fmtDay(K.ymd(new Date(t))); }
+function render() {
+  let html = K.header('Notes', 'notes') + `<div class="tabs"><button type="button" data-tab="notes" aria-pressed="${tab === 'notes'}">Notes</button><button type="button" data-tab="journal" aria-pressed="${tab === 'journal'}">Journal</button></div>`;
+  html += tab === 'notes' ? notesHtml() : journalHtml();
+  K.$('#app').innerHTML = html;
+  const s = K.$('#search'); if (s && q) { s.focus(); s.setSelectionRange(q.length, q.length); }
+}
+function notesHtml() {
+  const all = N.all().filter(n => n.kind !== 'journal');
+  let html = `<input class="search" id="search" type="search" placeholder="Search notes" value="${esc(q)}" aria-label="Search notes">`;
+  const ql = q.toLowerCase();
+  const list = all.filter(n => !ql || (n.title + ' ' + n.body + ' ' + (n.tags || []).join(' ')).toLowerCase().includes(ql)).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.updated - a.updated);
+  if (!all.length) return html + `<div class="empty"><b>No notes yet</b>Tap + to write one. Tip: tap the 🎤 on your keyboard to talk instead of typing.</div>`;
+  if (!list.length) return html + `<div class="empty"><b>Nothing found</b>No note has “${esc(q)}”.</div>`;
+  const pinned = list.filter(n => n.pinned), rest = list.filter(n => !n.pinned);
+  const cards = l => `<div class="notes">${l.map(n => `<button class="note" type="button" data-edit="${n.id}" style="${n.color ? `--nc:${n.color}` : ''}">
+      ${n.title ? `<h3>${esc(n.title)}</h3>` : ''}<p>${esc(preview(n.body))}</p><div class="when">${n.pinned ? '📌 ' : ''}${ago(n.updated)}${(n.tags || []).map(t => ' · #' + esc(t)).join('')}</div></button>`).join('')}</div>`;
+  if (pinned.length) html += `<div class="sec" style="margin-top:0">Pinned</div>` + cards(pinned) + (rest.length ? `<div class="sec">Others</div>` : '');
+  return html + cards(rest);
+}
+function preview(b) { return String(b || '').replace(/^- \[x\] /gim, '☑ ').replace(/^- \[ \] /gim, '☐ ').slice(0, 400); }
+
+function editNote(n) {
+  const isNew = !n;
+  n = n || { id: K.uid(), title: '', body: '', pinned: false, color: '', tags: [], kind: 'note' };
+  const f = K.form({
+    title: isNew ? 'New note' : 'Note',
+    fields: [
+      { k: 'title', label: 'Title', value: n.title, attrs: 'class="ttl"', placeholder: 'Title' },
+      { k: 'body', label: 'Note', type: 'textarea', value: n.body, placeholder: 'Write anything…\nStart a line with "- [ ] " for a checkbox.' },
+      { k: 'tags', label: 'Tags', value: (n.tags || []).join(', '), placeholder: 'school, ideas', half: true },
+      { k: 'pinned', label: '📌 Pin', type: 'checkbox', value: n.pinned, half: true },
+      { k: 'color', label: 'Colour', type: 'seg', value: n.color || '', options: [['', 'None']].concat(K.colors.slice(0, 10).map(c => [c, '●'])) },
+    ],
+    save(v) {
+      if (!v.title && !v.body) { if (!isNew) N.remove(n.id); render(); return; }
+      Object.assign(n, { title: v.title, body: v.body, pinned: v.pinned, color: v.color, tags: v.tags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean) });
+      N.upsert(n); render();
+    },
+    del: isNew ? null : () => { N.remove(n.id); render(); K.toast('Note deleted', () => { N.upsert(n); render(); }); },
+  });
+  f.classList.add('editor');
+  f.querySelector('.f:nth-of-type(1) label')?.setAttribute('hidden', '');
+  /* auto-continue checkbox lines when pressing Enter */
+  const ta = f.elements.body;
+  ta.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const before = ta.value.slice(0, ta.selectionStart), line = before.split('\n').pop();
+    const m = line.match(/^(- \[[ x]\] |- |\* |\d+\. )/i); if (!m) return;
+    e.preventDefault();
+    if (line.trim() === m[0].trim()) { ta.setRangeText('', ta.selectionStart - line.length, ta.selectionStart, 'end'); return; }
+    const next = /^\d+\. /.test(m[0]) ? (parseInt(m[0]) + 1) + '. ' : m[0].replace('[x]', '[ ]').replace('[X]', '[ ]');
+    ta.setRangeText('\n' + next, ta.selectionStart, ta.selectionEnd, 'end');
+  });
+}
+
+/* ---------- journal ---------- */
+function journalHtml() {
+  const js = N.all().filter(n => n.kind === 'journal').sort((a, b) => a.date < b.date ? 1 : -1);
+  const today = js.find(j => j.date === K.ymd());
+  let html = `<div class="card hl"><div class="k">${esc(K.fmtDay(K.ymd(), true))}</div>
+    ${today ? `<div class="big">${MOODS[today.mood - 1]?.[1] || ''} ${today.body ? '' : 'Mood logged'}</div><p class="muted small" style="margin:4px 0 10px;white-space:pre-wrap">${esc((today.body || '').slice(0, 160))}</p><button class="btn sm" type="button" data-j="${today.id}">Edit today</button>`
+      : `<div class="big">How was your day?</div><div class="row-btns" style="margin-top:10px">${MOODS.map(([v, e]) => `<button class="btn" type="button" data-mood="${v}" style="font-size:22px;padding:8px 12px" aria-label="Mood ${v} of 5">${e}</button>`).join('')}</div>`}</div>`;
+  if (js.length) {
+    let cells = '';
+    for (let i = 29; i >= 0; i--) { const d = K.addDays(K.ymd(), -i), j = js.find(x => x.date === d); cells += `<i title="${d}${j ? ': ' + MOODS[j.mood - 1][1] : ''}" style="${j ? `background:${MOODC[j.mood]}` : ''}"></i>`; }
+    const last30 = js.filter(j => j.date > K.addDays(K.ymd(), -30));
+    const avg = last30.length ? last30.reduce((a, j) => a + j.mood, 0) / last30.length : 0;
+    html += `<div class="card"><div class="k">Mood, last 30 days ${avg ? '· average ' + MOODS[Math.round(avg) - 1][1] : ''}</div><div class="moods" style="margin-top:10px">${cells}</div></div>`;
+    html += `<div class="list">${js.slice(0, 60).map(j => `<button class="entry" type="button" data-j="${j.id}"><span class="m">${MOODS[j.mood - 1]?.[1] || ''}</span><b>${esc(K.fmtDay(j.date, true))}</b>${j.body ? `<p>${esc(j.body)}</p>` : ''}</button>`).join('')}</div>`;
+  } else html += `<p class="hint">Log your mood each day and write a few lines. Over time you’ll see what makes good days good.</p>`;
+  return html;
+}
+function editJournal(j, mood) {
+  const isNew = !j;
+  j = j || { id: K.uid(), kind: 'journal', date: K.ymd(), mood: +mood || 3, body: '', title: '' };
+  K.form({
+    title: isNew ? 'Today' : K.fmtDay(j.date, true),
+    fields: [
+      { k: 'mood', label: 'Mood', type: 'seg', value: String(j.mood), options: MOODS },
+      { k: 'body', label: 'What happened? What went well?', type: 'textarea', value: j.body, placeholder: 'A few lines is enough.' },
+      { k: 'date', label: 'Date', type: 'date', value: j.date },
+    ],
+    save(v) {
+      const other = N.all().find(x => x.kind === 'journal' && x.date === v.date && x.id !== j.id);
+      if (other) { K.toast('There’s already an entry for that day'); return false; }
+      Object.assign(j, { mood: +v.mood, body: v.body, date: v.date }); N.upsert(j); render();
+    },
+    del: isNew ? null : () => { N.remove(j.id); render(); },
+  });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.tab) { tab = b.dataset.tab; history.replaceState(null, '', '#' + tab); render(); }
+  else if (b.dataset.edit) editNote(N.byId(b.dataset.edit));
+  else if (b.dataset.mood) editJournal(null, b.dataset.mood);
+  else if (b.dataset.j) editJournal(N.byId(b.dataset.j));
+  else if (b.id === 'fab') tab === 'notes' ? editNote() : editJournal(N.all().find(j => j.kind === 'journal' && j.date === K.ymd()));
+});
+document.addEventListener('input', e => { if (e.target.id === 'search') { q = e.target.value; render(); } });
+K.$('#fab').innerHTML = svg('plus');
+render();
+</script>
+</body>
+</html>

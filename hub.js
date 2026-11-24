@@ -22,6 +22,8 @@
     var c = lockCfg(); if (!c || !c.hash) return false;
     var at = +ssGet(SEEN_KEY) || 0;
     if (!at) return true;
+    /* Notes and Money: ask again if the last unlock was more than 30 seconds ago */
+    if (me && me.dataset.private && lsGet('hub.lockPrivate', true) && Date.now() - at > 30000) return true;
     var away = +ssGet(AWAY_KEY) || 0;
     return away > at && Date.now() - away > (c.after == null ? 60 : c.after) * 1000;
   }
@@ -111,6 +113,7 @@
   window.Hub = {
     root: ROOT,
     hasPin: function () { var c = lockCfg(); return !!(c && c.hash); },
+    lockPrivate: function (v) { if (v != null) lsSet('hub.lockPrivate', !!v); return lsGet('hub.lockPrivate', true); },
     lockAfter: function () { var c = lockCfg(); return c && c.after != null ? c.after : 60; },
     setPin: function (pin, after) {
       var salt = hex(crypto.getRandomValues(new Uint8Array(12)));
