@@ -30,5 +30,5 @@ Live data: [Transitous](https://transitous.org) for trips, [Open-Meteo](https://
 
 1. On GitHub, open this repository's **Settings → Pages**.
 2. Under **Build and deployment**, choose **Deploy from a branch**, pick `main` and `/ (root)`, and save.
-3. After a minute it's live at `https://jtanis2009-design.github.io/life-hub/`.
+3. After a minute it's live at `https://jtanis2009-design.github.io/life-hub-jt/`.
 4. Open that link in **Chrome on Android** → ⋮ menu → **Install app** / **Add to Home screen**.
