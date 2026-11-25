@@ -39,7 +39,9 @@
 <script src="../lib/agenda.js"></script>
 <script>
 const { esc, svg } = K;
-const REDIRECT = location.origin + location.pathname;
+const HERE = location.origin + location.pathname.replace(/index\.html$/, '');
+/* the address you put in Spotify (saved at set-up), always used exactly as typed there */
+const redirect = () => (cfg().redirect || HERE).trim();
 const cfg = () => Object.assign({ source: '', clientId: '', lfmUser: '', lfmKey: '' }, K.get('music', {}) || {});
 let view = K.get('music.view', 'week'), now = null, lfm = null, err = '';
 
@@ -51,7 +53,7 @@ async function spConnect() {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   localStorage.setItem('hub.music.verifier', verifier);
-  location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({ response_type: 'code', client_id: c.clientId, scope: SCOPES, code_challenge_method: 'S256', code_challenge: challenge, redirect_uri: REDIRECT });
+  location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({ response_type: 'code', client_id: c.clientId, scope: SCOPES, code_challenge_method: 'S256', code_challenge: challenge, redirect_uri: redirect() });
 }
 async function spToken(params) {
   const r = await fetch('https://accounts.spotify.com/api/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(Object.assign({ client_id: cfg().clientId }, params)) });
@@ -62,11 +64,11 @@ async function spToken(params) {
 }
 async function spFinishLogin() {
   const q = new URLSearchParams(location.search);
-  if (q.get('error')) { err = q.get('error') === 'access_denied' ? 'You didn’t allow access on Spotify.' : 'Spotify said: ' + q.get('error'); history.replaceState(null, '', REDIRECT); return; }
+  if (q.get('error')) { err = q.get('error') === 'access_denied' ? 'You didn’t allow access on Spotify.' : 'Spotify said: ' + q.get('error'); history.replaceState(null, '', HERE); return; }
   if (!q.get('code')) return;
-  try { await spToken({ grant_type: 'authorization_code', code: q.get('code'), redirect_uri: REDIRECT, code_verifier: localStorage.getItem('hub.music.verifier') || '' }); K.toast('Spotify connected 🎵'); }
+  try { await spToken({ grant_type: 'authorization_code', code: q.get('code'), redirect_uri: redirect(), code_verifier: localStorage.getItem('hub.music.verifier') || '' }); K.toast('Spotify connected 🎵'); }
   catch (e) { err = e.message; }
-  localStorage.removeItem('hub.music.verifier'); history.replaceState(null, '', REDIRECT);
+  localStorage.removeItem('hub.music.verifier'); history.replaceState(null, '', HERE);
 }
 async function sp(path) {
   let t = K.get('music.sp', null); if (!t || !t.refresh) throw Object.assign(new Error('Not connected'), { login: true });
@@ -176,10 +178,21 @@ function setup(which) {
     title: 'Connect Spotify', saveLabel: 'Connect',
     fields: [{ type: 'html', k: 'x', html: `<p class="small muted" style="margin-top:-6px">One-time setup (about 3 minutes). You need <b>Spotify Premium</b>.</p><ol class="steps">
         <li>On a computer or phone, open <b>developer.spotify.com/dashboard</b> and log in.</li><li>Tap <b>Create app</b>. Name: Life Hub. Description: My app.</li>
-        <li>Redirect URI: <code>${esc(REDIRECT)}</code></li><li>Tick <b>Web API</b>, accept the terms, save.</li><li>Open <b>Settings</b> of the app and copy the <b>Client ID</b> here.</li></ol>` },
-      { k: 'clientId', label: 'Client ID', value: c.clientId, required: true, placeholder: '32 letters and numbers' }],
-    save(v) { K.put('music', Object.assign(c, { source: 'spotify', clientId: v.clientId.trim() })); spConnect(); },
+        <li>Under <b>Redirect URIs</b>, paste the address below <b>exactly</b> (tap Copy), tap <b>Add</b>.</li><li>Tick <b>Web API</b>, accept the terms and tap <b>Save</b> at the bottom.</li><li>Open the app’s <b>Settings</b> and copy the <b>Client ID</b> here.</li></ol>` },
+      { k: 'redirect', label: 'Redirect URI (must be exactly the same in Spotify)', value: c.redirect || HERE, required: true, attrs: 'autocomplete="off" spellcheck="false"' },
+      { type: 'html', k: 'cp', html: `<div class="row-btns" style="margin:-4px 0 12px"><button class="btn sm" type="button" data-copy-redirect>📋 Copy</button></div>` },
+      { k: 'clientId', label: 'Client ID', value: c.clientId, required: true, placeholder: '32 letters and numbers' },
+      { type: 'html', k: 'help', html: `<details><summary style="font-weight:700;cursor:pointer">“redirect uri not matching configuration”?</summary><ul class="small muted" style="line-height:1.6;padding-left:18px;margin:8px 0 0">
+        <li>The Redirect URI in Spotify must be <b>the same, letter for letter</b>, as the one above: same capitals (<b>life-hub-JT</b> ≠ <b>life-hub-jt</b>) and the <b>/</b> at the end.</li>
+        <li>In the Spotify dashboard: your app → <b>Settings</b> → <b>Edit</b> → Redirect URIs. Fix it, tap <b>Add</b>, then <b>Save</b> at the very bottom (easy to miss).</li>
+        <li>Or change the address above so it matches what you put in Spotify. Life Hub then always uses that one.</li></ul></details>` }],
+    save(v) {
+      const r = v.redirect.trim(); if (!/^(https:\/\/|http:\/\/(127\.0\.0\.1|localhost)[:/])[^\s]+$/.test(r)) { K.toast('The redirect address must start with https://'); return false; }
+      if (r.replace(/\/?$/, '/').toLowerCase() !== HERE.replace(/\/?$/, '/').toLowerCase()) { K.toast('That address isn’t this Music page. Use the one Life Hub shows, unless you know it’s right.'); }
+      K.put('music', Object.assign(c, { source: 'spotify', clientId: v.clientId.trim(), redirect: r })); spConnect();
+    },
   });
+  if (which === 'spotify') setTimeout(() => { const b = document.querySelector('[data-copy-redirect]'); if (b) b.onclick = async () => { const v = document.querySelector('.sheet [name="redirect"]').value.trim(); try { await navigator.clipboard.writeText(v); b.textContent = '✓ Copied'; } catch { document.querySelector('.sheet [name="redirect"]').select(); } }; }, 50);
   else K.form({
     title: 'Connect Last.fm', saveLabel: 'Connect',
     fields: [{ type: 'html', k: 'x', html: `<p class="small muted" style="margin-top:-6px">One-time setup (about 3 minutes), free.</p><ol class="steps">
