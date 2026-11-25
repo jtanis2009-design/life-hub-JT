@@ -855,7 +855,7 @@ function setupItems() {
   const auth = get('wl_auth', null), st = window.K && K.sync ? K.sync.state() : {};
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   return [
-    ['📲', 'Install Life Hub', 'Chrome ⋮ → Install app, so it opens like an app', !!standalone, 'install'],
+    ['📲', 'Install Life Hub', installEvt ? 'Tap to install it on your home screen' : 'So it opens like an app (tap for how)', !!standalone, 'install'],
     ['☁️', 'Log in for cloud sync', 'Workout → You: backs up everything', !!(auth && auth.rt), 'workout/'],
     ['🔄', 'Cloud sync working', st.err ? st.err : 'Settings → Cloud sync', !!(auth && auth.rt && st.last && !st.err), '#settings'],
     ['🔔', 'Allow notifications', 'For reminders, homework and alarms', 'Notification' in window && Notification.permission === 'granted', 'notify'],
@@ -881,8 +881,25 @@ function drawSetup() {
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-su]'); if (!b) return;
   if (b.dataset.su === 'notify') { await K.askNotify(); drawSetup(); }
-  else toast('In Chrome: tap ⋮ (top right) → Install app / Add to Home screen');
+  else installApp();
 });
+/* ---------- installing Life Hub ---------- */
+let installEvt = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; drawSetup(); });   /* Chrome says it can install: keep its popup for our button */
+addEventListener('appinstalled', () => { installEvt = null; toast('Life Hub is installed 🎉 Open it from your home screen.'); drawSetup(); });
+async function installApp() {
+  if (installEvt) { installEvt.prompt(); const r = await installEvt.userChoice.catch(() => null); if (r && r.outcome === 'accepted') installEvt = null; drawSetup(); return; }
+  const ua = navigator.userAgent, inApp = /; wv\)|FBAN|FBAV|Instagram|WhatsApp|GitHub|Line\/|Snapchat|GSA\//i.test(ua), samsung = /SamsungBrowser/i.test(ua), firefox = /Firefox/i.test(ua);
+  const steps = inApp ? ['This page is open <b>inside another app</b> (like GitHub or WhatsApp). Those can’t install apps.', 'Tap <b>⋮</b> (or the share/compass button) → <b>Open in Chrome</b>, or copy the link and paste it in Chrome.', 'Then come back to this card and tap <b>Install Life Hub</b> again.']
+    : samsung ? ['Tap <b>☰</b> (bottom right) → <b>Add page to</b> → <b>Home screen</b>.', 'Or open this page in <b>Chrome</b> for the full app (share menu, notifications when closed).']
+    : firefox ? ['Tap <b>⋮</b> → <b>Install</b> (or <b>Add to Home screen</b>).', 'Chrome works best for Life Hub: notifications when closed and the share menu.']
+    : ['Tap <b>⋮</b> (top right in Chrome).', 'Tap <b>Add to home screen</b> (on some phones it says <b>Install app</b>).', 'Choose <b>Install</b> (not “Create shortcut”) and confirm.', 'Still not there? Pull down to reload this page once and wait a few seconds: Chrome sometimes needs a second visit.'];
+  const box = document.createElement('div'); box.className = 'card'; box.setAttribute('role', 'dialog');
+  box.style.cssText = 'position:fixed;left:16px;right:16px;bottom:calc(20px + var(--hubnav-h));z-index:60;box-shadow:0 10px 30px rgba(0,0,0,.4)';
+  box.innerHTML = `<b>Install Life Hub</b><ol style="margin:8px 0 0;padding-left:20px;line-height:1.6;color:var(--muted)">${steps.map(x => `<li>${x}</li>`).join('')}</ol>
+    <p class="small" style="color:var(--muted-2);margin:8px 0 0">${esc(location.href.split('#')[0])}</p><button class="btn" type="button" style="margin-top:10px">Close</button>`;
+  box.querySelector('button').onclick = () => box.remove(); document.body.appendChild(box);
+}
 $('#suHide').onclick = () => { const L = layout(); if (!L.hidden.includes('setup')) L.hidden.push('setup'); set('hub.layout', L); applyLayout(); drawLayout(); toast('Hidden. Turn it back on in Settings → Today screen.'); };
 
 /* ---------- morning brief ---------- */
