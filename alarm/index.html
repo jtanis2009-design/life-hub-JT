@@ -36,6 +36,7 @@
   #night .info { display: none; max-width: 420px; font-size: 16px; line-height: 1.55; text-align: left; background: #ffffff12; border-radius: 16px; padding: 12px 16px; margin-top: 8px; }
   #night.ring .info { display: block; }
   #night.ring .acts { display: none; }
+  #night .awakebtn { display: none; } #night.awake .awakebtn { display: block; background: var(--c) !important; color: #0d0f14 !important; } #night.awake .upbtn { display: none; }
   #night .ringbtns button { padding: 22px; border-radius: 22px; font-size: 20px; font-weight: 800; }
   #night .ringbtns .up { background: var(--c); color: #0d0f14; }
   #night .ringbtns .snooze { background: #2a2740; color: #fff; }
@@ -70,7 +71,7 @@ function render() {
     const d = a.smart ? nextDayWith(a) : null, t = a.smart ? K.alarmTime(a, d) : a.time, mp = a.smart && K.morningPlan(d);
     const how = a.smart ? (mp ? `🚌 ${K.fmtDay(d)}: ${mp.line || 'bus'} ${mp.bus ? mp.bus.stopTime : mp.leave}${mp.earlier ? ` (${mp.earlier} before the last one, ${mp.lastBus})` : ''} · at school ${mp.arrive}` : '🎓 follows your first lesson') : daysText(a.days);
     return `<div class="alarm ${a.on ? '' : 'off'}"><button class="body" type="button" data-edit="${a.id}"><div class="tm">${t || '--:--'}</div><span>${esc(a.label || 'Alarm')} · ${esc(how)}</span></button>
-      <button class="sw" type="button" role="switch" aria-checked="${!!a.on}" data-tog="${a.id}" aria-label="${a.on ? 'Turn off' : 'Turn on'} ${esc(a.label || 'alarm')}"></button></div>`;
+      ${(a.backups ?? 3) ? `<span class="small muted" style="flex:none;text-align:right;line-height:1.3">+${a.backups ?? 3}<br>back-up</span>` : ''}<button class="sw" type="button" role="switch" aria-checked="${!!a.on}" data-tog="${a.id}" aria-label="${a.on ? 'Turn off' : 'Turn on'} ${esc(a.label || 'alarm')}"></button></div>`;
   }).join('')}</div>`;
   html += `<div class="card"><div class="k">How Life Hub alarms work</div><ul class="small muted" style="margin:8px 0 0;padding-left:18px;line-height:1.6">
     <li><b>Night mode</b>: put your phone on the charger with Life Hub open. The screen stays on (very dim), the alarm rings loudly, and your sleep is tracked.</li>
@@ -110,12 +111,14 @@ function edit(a, preset) {
       { k: 'fade', label: 'Gets louder over', type: 'seg', value: a.fade ?? 40, options: [[0, 'Loud now'], [20, '20 s'], [40, '40 s'], [90, '1½ min'], [180, '3 min']] },
       { k: 'vol', label: 'Song volume', type: 'seg', value: a.vol || 100, options: [[40, 'Soft'], [70, 'Medium'], [100, 'Full']] },
       { k: 'beepsAfter', label: 'Still asleep? Add beeps after', type: 'seg', value: a.beepsAfter ?? 3, options: [[0, 'Never'], [1, '1 min'], [3, '3 min'], [5, '5 min'], [10, '10 min']] },
+      { k: 'backups', label: 'Back-up alarms after it (in case you fall asleep again)', type: 'seg', value: a.backups ?? 3, options: [[0, 'None'], [1, '1'], [2, '2'], [3, '3'], [4, '4']] },
+      { k: 'gap', label: 'Minutes between them', type: 'seg', value: a.gap || 10, options: [[5, '5 min'], [10, '10 min'], [15, '15 min']] },
       { k: 'snooze', label: 'Snooze minutes', type: 'number', value: a.snooze || 9, half: true },
       { k: 'on', label: 'On', type: 'checkbox', value: a.on, half: true },
     ],
     save(v) {
       const days = a.smart ? [] : [...f.querySelectorAll('[data-days] [aria-pressed="true"]')].map(b => +b.dataset.d);
-      Object.assign(a, { time: v.time, label: v.label, snooze: v.snooze || 9, on: v.on, days, sound: v.sound || 'beep', fade: +v.fade, vol: +v.vol || 100, beepsAfter: +v.beepsAfter });
+      Object.assign(a, { time: v.time, label: v.label, snooze: v.snooze || 9, on: v.on, days, sound: v.sound || 'beep', fade: +v.fade, vol: +v.vol || 100, beepsAfter: +v.beepsAfter, backups: +v.backups, gap: +v.gap || 10 });
       if (a.smart) { const mc = K.morningCfg(), nv = { ready: Math.max(60, v.ready || 60), early: v.early || 0, bus: v.bus, earlier: v.earlier || 'auto', spare: v.spare || 20 };
         if ((v.ready || 60) < 60) K.toast('Set to 60 minutes: the alarm goes at least an hour before your bus.');
         const changed = ['ready', 'early', 'bus', 'earlier', 'spare'].some(x => mc[x] !== nv[x]);
@@ -136,7 +139,14 @@ function edit(a, preset) {
 
 /* ---------- copy into Android's own Clock app ---------- */
 function systemAlarm(a) {
-  const t = (a.smart ? K.alarmTime(a, nextDayWith(a)) : a.time) || '07:00', [h, m] = t.split(':').map(Number);
+  const t0 = (a.smart ? K.alarmTime(a, nextDayWith(a)) : a.time) || '07:00', n = a.backups ?? 3;
+  if (!n) return clockApp(a, t0);
+  const [h0, m0] = t0.split(':').map(Number), times = [...Array(n + 1)].map((_, k) => { const x = h0 * 60 + m0 + k * (a.gap || 10); return K.pad(Math.floor(x / 60) % 24) + ':' + K.pad(x % 60); });
+  K.form({ title: 'Set them in your Clock app', saveLabel: 'Done', fields: [{ type: 'html', k: 'x', html: `<p class="small muted" style="margin-top:-6px">Tap each one: the Clock app opens with the time filled in. Come back here for the next.</p><div class="list">${times.map((x, k) => `<button class="item" type="button" data-clock="${x}" style="width:100%"><span class="body"><span class="title" style="font-size:20px">${x}</span><span class="meta"><span>${k ? 'Back-up ' + k : 'Main alarm'}</span></span></span><span class="right">Set ›</span></button>`).join('')}</div>` }], save: () => {} })
+    .addEventListener('click', e => { const b = e.target.closest('[data-clock]'); if (b) { b.querySelector('.right').textContent = '✓'; clockApp(a, b.dataset.clock); } });
+}
+function clockApp(a, t) {
+  const [h, m] = t.split(':').map(Number);
   const url = `intent:#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.alarm.HOUR=${h};i.android.intent.extra.alarm.MINUTES=${m};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(a.label || 'Life Hub')};end`;
   const before = Date.now(); location.href = url;
   setTimeout(() => { if (document.visibilityState === 'visible' && Date.now() - before < 3000) K.form({ title: 'Set it in your Clock app', saveLabel: 'OK', fields: [{ type: 'html', k: 'x', html: `<p>Your phone didn’t open the Clock app from here. Open <b>Clock</b> yourself and add an alarm for <b style="font-size:20px">${t}</b>${a.smart ? ' (school alarm: check the time each evening, it follows your timetable)' : ''}.</p>` }], save: () => {} }); }, 1500);
@@ -152,7 +162,7 @@ async function startNight() {
   el.innerHTML = `<div class="clock" id="nClock"></div><div class="sub" id="nSub"></div>
     <div class="info" id="nInfo"></div>
     <div class="ringbtns"><button class="up" type="button" data-act="up">☀️ I’m up</button><button class="snooze" type="button" data-act="snooze">😴 Snooze</button></div>
-    <div class="acts"><button type="button" data-act="up">☀️ I’m up</button><button type="button" data-act="stopNight">Stop night mode</button></div>`;
+    <div class="acts"><button type="button" data-act="awake" class="awakebtn">✅ I’m really awake</button><button type="button" data-act="up" class="upbtn">☀️ I’m up</button><button type="button" data-act="stopNight">Stop night mode</button></div>`;
   document.body.appendChild(el);
   try { await document.documentElement.requestFullscreen(); } catch {}
   prepareYt();
@@ -172,14 +182,18 @@ function tickNight() {
   night.lastCheck = Date.now();
   K.$('#nClock').textContent = K.hm(n);
   const show = nx && nx.at <= Date.now() ? K.nextAlarm() : nx;
-  K.$('#nSub').textContent = night.ringing ? ((night.ringingAlarm || {}).label || 'Wake up!') + (night.song ? ' · ♪ ' + night.song.name : '') : night.snoozeUntil ? `Snoozing until ${K.hm(new Date(night.snoozeUntil))}` : show ? `⏰ ${K.hm(new Date(show.at))} · in ${until(show.at)}` : 'No alarm set';
+  const bl = night.backups && night.backups.i < night.backups.list.length ? night.backups : null;
+  K.$('#nSub').textContent = night.ringing ? (night.ringTitle || (night.ringingAlarm || {}).label || 'Wake up!') + (night.song ? ' · ♪ ' + night.song.name : '') : night.wokeAt && bl ? `☀️ Good morning! Fell asleep again? Back-up alarm at ${K.hm(new Date(bl.list[bl.i]))} (${bl.list.length - bl.i} left)` : night.snoozeUntil ? `Snoozing until ${K.hm(new Date(night.snoozeUntil))}` : show ? `⏰ ${K.hm(new Date(show.at))} · in ${until(show.at)}` : 'No alarm set';
   if (night.ringing) { if (n.getSeconds() === 0) showDayInfo(); return; }   /* bus status stays live while it rings */
   const due = night.snoozeUntil ? (Date.now() >= night.snoozeUntil) : (nx && nx.at <= Date.now() && Date.now() - nx.at < 30 * 60000 && !night.fired[nx.key]);
-  if (due) { if (nx) night.fired[nx.key] = 1; night.snoozeUntil = 0; ring(nx && nx.a); }
+  const bu = night.backups, buDue = bu && bu.i < bu.list.length && Date.now() >= bu.list[bu.i];
+  if (buDue) { bu.i++; night.snoozeUntil = 0; ring(bu.a, `Back-up alarm ${bu.i + 1} of ${bu.list.length + 1}`); return; }
+  if (due) { if (nx) { night.fired[nx.key] = 1; const n2 = nx.a.backups ?? 3, gap = (nx.a.gap || 10) * 60000; night.backups = n2 ? { a: nx.a, list: [...Array(n2)].map((_, k) => nx.at + (k + 1) * gap), i: 0 } : null; night.wokeAt = 0; K.$('#night').classList.remove('awake'); }
+    night.snoozeUntil = 0; ring(nx && nx.a); }
 }
-function ring(a) {
-  night.ringing = true; night.ringingAlarm = a; K.$('#night').classList.add('ring');
-  K.$('#nSub').textContent = (a && a.label) || 'Wake up!';
+function ring(a, title) {
+  night.ringing = true; night.ringingAlarm = a; night.ringTitle = title || ''; K.$('#night').classList.add('ring');
+  K.$('#nSub').textContent = title || (a && a.label) || 'Wake up!';
   if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
   showDayInfo();
   K.showNotification('⏰ ' + ((a && a.label) || 'Wake up!'), 'Tap to stop the alarm', location.href, 'alarm');
@@ -216,7 +230,7 @@ function stopNight(woke) {
   document.removeEventListener('visibilitychange', relock); K.$('#night')?.remove(); try { document.exitFullscreen(); } catch {}
   const p = K.get('sleep.pending', null);
   if (woke && p) {
-    const wake = `${K.ymd()}T${K.hm(new Date())}`, mins = Math.round((new Date(wake) - new Date(p)) / 60000);
+    const wake = `${K.ymd()}T${K.hm(new Date(night.wokeAt || Date.now()))}`, mins = Math.round((new Date(wake) - new Date(p)) / 60000);
     if (mins > 60 && mins < 16 * 60) { K.sleepLog.upsert({ id: K.uid(), bed: p, wake, q: 3, note: 'night mode' }); localStorage.removeItem('hub.sleep.pending'); K.toast(`Good morning! You slept ${Math.floor(mins / 60)}h ${K.pad(mins % 60)}m ☀️`); }
   } else if (!woke && p && Date.now() - new Date(p) < 10 * 60000) localStorage.removeItem('hub.sleep.pending');   /* stopped right after starting */
   night = null; render();
@@ -336,8 +350,9 @@ function studio(t) {
         <input type="range" id="stR" min="0" max="1" value="0" step="1" style="width:100%;margin:12px 0 2px" aria-label="Position in the song">
         <div class="small muted" style="display:flex;justify-content:space-between"><span id="stT">0:00</span><span id="stD">…</span></div>
         <div class="row-btns" style="justify-content:center;margin:8px 0">${[-10, -2].map(s => `<button class="btn sm" type="button" data-sk="${s}">${s}s</button>`).join('')}<button class="btn sm primary" type="button" data-pp style="min-width:70px">▶ Play</button>${[2, 10].map(s => `<button class="btn sm" type="button" data-sk="${s}">+${s}s</button>`).join('')}</div>
-        <div class="row-btns" style="margin-bottom:6px"><button class="btn sm" type="button" data-setstart>📍 Start here</button><button class="btn sm" type="button" data-setend>🏁 End here</button><button class="btn sm" type="button" data-hear>▶ Hear the alarm part</button></div>
-        <p class="small" id="stInfo" style="margin:4px 0 12px"></p>` },
+        <div class="row-btns" style="margin-bottom:6px"><button class="btn sm" type="button" data-setstart>📍 Start here</button><button class="btn sm" type="button" data-setend>🏁 End here</button><button class="btn sm" type="button" data-hear>▶ Hear the alarm part</button>${isYt ? '' : '<button class="btn sm primary" type="button" data-best>✨ Find the best part</button>'}</div>
+        <p class="small" id="stInfo" style="margin:4px 0 8px"></p>
+        ${isYt ? `<p class="small muted" style="margin:0 0 12px">💡 <b>Find the best moment:</b> open this video in the YouTube app and drag along the progress bar. The wave above it (<b>“Most replayed”</b>) peaks at the part people replay most, usually the chorus or drop. Note that time, then type it below or scrub there and tap 📍.</p>` : ''}` },
       { k: 'start', label: 'Alarm starts at', value: fmtSec(st.start), half: true, attrs: 'inputmode="numeric"', hint: 'e.g. 1:05' },
       { k: 'end', label: 'Ends at (optional)', value: st.end ? fmtSec(st.end) : '', half: true, attrs: 'inputmode="numeric"', placeholder: 'whole song', hint: 'Loops back to the start' },
       { k: 'name', label: 'Name', value: t.name, required: true },
@@ -366,6 +381,7 @@ function studio(t) {
         P = { cur: () => yp.getCurrentTime() || 0, dur: () => yp.getDuration() || 0, seek: s => yp.seekTo(s, true), play: () => yp.playVideo(), pause: () => yp.pauseVideo(), playing: () => yp.getPlayerState() === 1, kill: () => { try { yp.destroy(); } catch {} } };
       } else {
         const fl = await K.files.get(t.fileId); if (!fl) throw new Error('missing');
+        st.blob = fl.blob;
         const au = new Audio(URL.createObjectURL(fl.blob)); au.currentTime = st.start;
         $('#stP').innerHTML = `<div style="color:#fff;text-align:center;font-size:40px">🎵</div>`;
         P = { cur: () => au.currentTime, dur: () => isFinite(au.duration) ? au.duration : 0, seek: s => { au.currentTime = s; }, play: () => au.play(), pause: () => au.pause(), playing: () => !au.paused, kill: () => { au.pause(); URL.revokeObjectURL(au.src); } };
@@ -389,6 +405,11 @@ function studio(t) {
     else if ('setstart' in b.dataset) { st.start = Math.floor(P.cur()); if (st.end && st.end <= st.start + 2) st.end = 0; syncFields(); K.toast('Alarm starts at ' + fmtSec(st.start)); }
     else if ('setend' in b.dataset) { const c = Math.floor(P.cur()); if (c <= st.start + 2) return K.toast('The end has to be after the start.'); st.end = c; syncFields(); K.toast('Alarm loops at ' + fmtSec(st.end)); }
     else if ('hear' in b.dataset) { st.hearing = true; P.seek(st.start); P.play(); }
+    else if ('best' in b.dataset && st.blob) { b.disabled = true; b.textContent = '✨ Listening…';
+      bestPart(st.blob).then(r => { st.start = r.start; if (st.end && st.end <= st.start + 2) st.end = 0; syncFields(); P.seek(st.start); st.hearing = true; P.play();
+        K.toast(`Best part: ${fmtSec(r.start)}, where the song gets loud and full. Playing it now. Tap Save if you like it.`); })
+        .catch(() => K.toast('Couldn’t analyse this file. Set the start yourself.')).finally(() => { b.disabled = false; b.textContent = '✨ Find the best part'; });
+    }
   });
 }
 
@@ -500,6 +521,22 @@ function spStudio(t) {
 }
 function spReconnectHint() { K.form({ title: 'One more Spotify step', saveLabel: 'Reconnect now', fields: [{ type: 'html', k: 'x', html: `<p>Life Hub needs permission to <b>start songs</b> in your Spotify app. Open Music → Spotify and connect again (same steps, takes 10 seconds).</p>` }], save() { location.href = '../music/#reconnect'; } }); }
 
+/* ✨ the best moment to wake up to: where the song first becomes loud and full (often the chorus or drop).
+   Measures loudness every half second, smooths it over 8 s, and starts 1 s before the first stretch near the loudest level. */
+async function bestPart(blob) {
+  const C = window.OfflineAudioContext || window.webkitOfflineAudioContext, ac = new C(1, 44100, 44100);
+  const buf = await ac.decodeAudioData(await blob.arrayBuffer());
+  const ch = buf.getChannelData(0), sr = buf.sampleRate, win = Math.floor(sr / 2), n = Math.floor(ch.length / win);
+  const e = new Float32Array(n);
+  for (let i = 0; i < n; i++) { let sum = 0; for (let j = i * win; j < (i + 1) * win; j += 8) sum += ch[j] * ch[j]; e[i] = Math.sqrt(sum / (win / 8)); }
+  const W = 16, sm = []; for (let i = 0; i + W <= n; i++) { let x = 0; for (let k = 0; k < W; k++) x += e[i + k]; sm.push(x / W); }
+  if (!sm.length) return { start: 0 };
+  const lo = Math.min(20, Math.floor(sm.length / 4)), hi = Math.max(lo + 1, sm.length - 20);   /* skip the first 10 s and the last 10 s */
+  let max = 0; for (let i = lo; i < hi; i++) max = Math.max(max, sm[i]);
+  let at = lo; for (let i = lo; i < hi; i++) if (sm[i] >= max * 0.9) { at = i; break; }
+  return { start: Math.max(0, Math.round(at / 2 - 1)) };
+}
+
 /* ---------- the player that rings (hidden YouTube player, or an <audio> for files) ---------- */
 let ytApi = null;
 function loadYtApi() {
@@ -592,7 +629,10 @@ document.addEventListener('click', e => {
   else if (d.act === 'school') edit(null, { smart: true, label: 'School', time: '' });
   else if (d.act === 'night') startNight();
   else if (d.act === 'stopNight') stopNight(false);
-  else if (d.act === 'up') stopNight(true);
+  else if (d.act === 'up') { const bl = night && night.backups && night.backups.i < night.backups.list.length;
+    if (bl) { night.wokeAt = night.wokeAt || Date.now(); stopRing(); K.$('#night').classList.add('awake'); K.toast(`Good morning! ☀️ The back-up alarms stay on in case you fall asleep again. Tap “I’m really awake” to stop them.`); }
+    else stopNight(true); }
+  else if (d.act === 'awake') stopNight(true);
   else if (d.act === 'snooze') { const m = +((night.ringingAlarm || {}).snooze || 9); stopRing(); night.snoozeUntil = Date.now() + m * 60000; }
   else if (d.act === 'test') testSound();
   else if (d.act === 'addYt') addYouTube();
