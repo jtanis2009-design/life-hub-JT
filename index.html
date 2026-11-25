@@ -503,7 +503,21 @@ const TRIPS_DEFAULT = [
 const MODE = { BUS: 'Bus', TRAM: 'Tram', SUBWAY: 'Metro', METRO: 'Metro', RAIL: 'Train', REGIONAL_RAIL: 'Train', HIGHSPEED_RAIL: 'Train', LONG_DISTANCE: 'Train', COACH: 'Bus', FERRY: 'Ferry' };
 function mins(ms) { return Math.round(ms / 60000); }
 function untilText(ms) { const m = mins(ms); if (m <= 0) return 'now'; if (m < 60) return `in ${m} min`; return `in ${Math.floor(m / 60)} h ${pad(m % 60)}`; }
+/* 🚌 the bus Life Hub is watching (school bus this morning, or one you follow): live status instead of the next trip */
+function busCard() {
+  const w = window.LHBus && LHBus.watches()[0]; if (!w) return false;
+  const st = LHBus.state()[w.trip + '@' + w.sched] || {}, dep = new Date(st.time || w.time || w.sched), mp = w.school && window.K && K.morningPlan(K.ymd());
+  $('#c-trip').href = 'travel/';
+  $('#t-route').textContent = w.school ? '🎓 Your school bus' : '🔔 Bus you follow';
+  const left = Math.round((dep - Date.now()) / 60000);
+  $('#t-main').innerHTML = `${esc(w.line || 'Bus')} ${hm(dep)} <span style="font-weight:600;font-size:16px;color:var(--muted)">· ${left > 0 ? 'in ' + (left >= 60 ? Math.floor(left / 60) + ' h ' + pad(left % 60) : left + ' min') : 'now'}</span>`;
+  const status = st.cancelled ? '<span class="late">Cancelled: check Travel</span>' : st.delay >= 2 ? `<span class="late">+${st.delay} min late</span>` : st.at ? `<span class="ontime">${st.live ? 'On time' : 'No live data yet'}</span>` : 'Checking…';
+  const checked = st.at ? ` · checked ${Math.max(0, Math.round((Date.now() - st.at) / 60000))} min ago` : '';
+  $('#t-sub').innerHTML = `${status}${w.stop ? ' · ' + esc(w.stop) : ''}${mp && mp.arrive ? ' · at school ' + mp.arrive : ''}${mp && mp.earlier ? ` · last one that works: ${mp.lastBus}` : ''}${checked}`;
+  return true;
+}
 async function loadTrip() {
+  if (busCard()) { if (window.LHBus) LHBus.check().then(busCard); return; }
   const trips = get('traveler.trips', TRIPS_DEFAULT) || TRIPS_DEFAULT;
   const trip = trips.find(t => t.id === get('traveler.selected', 'mh-glr')) || trips[0];
   if (!trip) { $('#t-main').textContent = 'No saved trips'; $('#t-sub').textContent = 'Add one in Travel.'; return; }
@@ -690,6 +704,7 @@ function drawBackupBanner() {
 
 /* ---------- apps ---------- */
 const ICON = {
+  review: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   ow: '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z"/><path d="M8 8.5l2 6.5M16 8.5l-2 6.5M12 7v6"/>',
   travel: '<path d="M6 17V7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v10M6 13h12M8.5 20.5l1-3M15.5 20.5l-1-3"/>',
   workout: '<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>',
@@ -729,6 +744,7 @@ const APPS = [
   { id: 'alarm', name: 'Alarms', sub: 'Night mode & school', c: '#9b8cff', href: 'alarm/' },
   { id: 'music', name: 'Music', sub: 'Spotify stats', c: '#1ed760', href: 'music/' },
   { id: 'anime', name: 'Anime', sub: 'Your watch list', c: '#ff7eb6', href: 'anime/' },
+  { id: 'review', name: 'Week review', sub: 'Your week in numbers', c: '#8b7cff', href: 'review/' },
   { id: 'ow', name: 'Overwatch', sub: 'Stats, log & weapons', c: '#f99e1a', href: 'overwatch/' },
   { id: 'clothes', name: 'Clothes', sub: 'Outfits & wardrobe', c: '#b48cff', href: 'clothes/' },
   { id: 'shave', name: 'Shaving', sub: 'Days & blades', c: '#56ccf2', href: 'shaving/' },

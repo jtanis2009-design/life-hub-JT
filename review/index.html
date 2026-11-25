@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Week review · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .wk { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .wk b { flex: 1; text-align: center; font-size: 17px; }
+  .wk button { width: 42px; height: 42px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); font-size: 18px; font-weight: 800; }
+  .wk button:disabled { opacity: .35; }
+  .stat .d { font-size: 12px; font-weight: 700; margin-top: 2px; }
+  .up { color: var(--good); } .down { color: var(--bad); } .same { color: var(--muted); }
+  .hl { display: flex; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); }
+  .hl:first-child { border-top: 0; }
+</style>
+</head>
+<body style="--c:#8b7cff">
+<div class="wrap" id="app"></div>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const monday = s => { const d = K.fromYmd(s), n = (d.getDay() + 6) % 7; return K.addDays(s, -n); };
+let off = 0;   /* 0 = this week, -1 = last week … */
+function delta(a, b, unit, betterLow) {
+  if (b == null || (!a && !b)) return '';
+  const d = a - b; if (!d) return `<div class="d same">same as the week before</div>`;
+  const good = betterLow ? d < 0 : d > 0;
+  return `<div class="d ${good ? 'up' : 'down'}">${d > 0 ? '▲' : '▼'} ${unit(Math.abs(d))} vs the week before</div>`;
+}
+const hm = m => `${Math.floor(m / 60)}h ${K.pad(m % 60)}`;
+function render() {
+  const start = K.addDays(monday(K.ymd()), off * 7), r = K.weekReview(start), p = K.weekReview(K.addDays(start, -7));
+  const s0 = K.fromYmd(start), s6 = K.fromYmd(r.end), mo = d => K.MONTHS[d.getMonth()].slice(0, 3);
+  let h = K.header('Week review', 'chart');
+  h += `<div class="wk"><button type="button" data-w="-1" aria-label="Previous week">‹</button><b>${off === 0 ? 'This week' : off === -1 ? 'Last week' : ''} ${s0.getDate()} ${mo(s0)} – ${s6.getDate()} ${mo(s6)}</b><button type="button" data-w="1" aria-label="Next week" ${off >= 0 ? 'disabled' : ''}>›</button></div>`;
+  if (off === 0 && r.days < 7) h += `<p class="hint" style="margin-top:-4px">${K.plural(r.days, 'day')} so far. Compared with the full week before.</p>`;
+  const tile = (k, v, sub, d) => `<div class="stat"><div class="k">${k}</div><div class="v num">${v}</div>${sub ? `<div class="s">${sub}</div>` : ''}${d || ''}</div>`;
+  const tiles = [
+    tile('🏋️ Workouts', r.workouts, `${r.water}/${r.days} days water goal`, delta(r.workouts, p.workouts, n => n)),
+    tile('😴 Sleep', r.sleepAvg ? hm(r.sleepAvg) : '–', r.sleepNights ? `average of ${K.plural(r.sleepNights, 'night')}` : 'no nights logged', r.sleepAvg && p.sleepAvg ? delta(r.sleepAvg, p.sleepAvg, n => n + ' min') : ''),
+    tile('🔥 Habits', r.habitsDue ? Math.round(r.habitsKept / r.habitsDue * 100) + '<small>%</small>' : '–', r.habitsDue ? `${r.habitsKept} of ${r.habitsDue} kept` : 'no habits yet'),
+    tile('✅ Done', r.homework + r.tasks, `${K.plural(r.homework, 'homework task')} · ${K.plural(r.tasks, 'to-do')}`, delta(r.homework + r.tasks, p.homework + p.tasks, n => n)),
+    tile('💸 Spent', K.eur(r.spent), r.earned ? `${K.eur(r.earned)} came in` : '', delta(Math.round(r.spent * 100) / 100, Math.round(p.spent * 100) / 100, n => K.eur(n), true)),
+    tile('🎵 Music', r.musicMin >= 120 ? Math.round(r.musicMin / 60) + '<small> h</small>' : r.musicMin + '<small> min</small>', r.songs ? K.plural(r.songs, 'song') : 'connect in Music', delta(r.musicMin, p.musicMin, n => n + ' min')),
+    ...(r.owGames != null ? [tile('🎮 Overwatch', r.owGames, `${r.owWins} won · ${r.owHours} h`, delta(r.owGames, p.owGames, n => K.plural(n, 'game')))] : []),
+    ...(r.anime ? [tile('🎬 Anime', r.anime, 'episodes watched', delta(r.anime, p.anime, n => n))] : []),
+  ];
+  h += `<div class="grid2">${tiles.join('')}</div>`;
+  /* the highlights */
+  const H = [];
+  if (r.workouts && r.workouts > (p.workouts || 0)) H.push(['💪', `More workouts than the week before (${r.workouts} vs ${p.workouts}).`]);
+  if (r.habitsDue && r.habitsKept === r.habitsDue) H.push(['🏆', 'Every habit kept. Perfect week!']);
+  if (r.sleepAvg && r.sleepAvg < K.sleepCfg().goal * 60 - 30) H.push(['😴', `You slept ${hm(K.sleepCfg().goal * 60 - r.sleepAvg)} less than your goal a night. Try going to bed earlier.`]);
+  if (p.spent && r.spent > p.spent * 1.5 && r.spent - p.spent > 20) H.push(['💸', `You spent ${K.eur(r.spent - p.spent)} more than the week before.`]);
+  if (r.owGames && r.owGames >= 5) H.push(['🎮', `${Math.round(r.owWins / r.owGames * 100)}% wins in Overwatch this week.`]);
+  const tests = K.homework.all().filter(x => !x.done && x.type === 'test' && x.due > r.end && x.due <= K.addDays(r.end, 7));
+  if (off === 0 && tests.length) H.push(['📝', `Coming up next week: ${tests.map(x => x.subject || x.title).join(', ')}.`]);
+  if (H.length) h += `<div class="sec">Highlights</div><div class="list">${H.map(([i, t]) => `<div class="hl"><span>${i}</span><span>${K.esc(t)}</span></div>`).join('')}</div>`;
+  const c = K.reviewCfg();
+  h += `<div class="list" style="margin-top:16px"><div class="item"><span class="body"><span class="title">Sunday notification</span><span class="meta"><span>${c.on ? 'Every Sunday at ' + c.time : 'Off'}</span></span></span><button class="sw" type="button" role="switch" aria-checked="${c.on}" data-act="tog" aria-label="Sunday review notification" style="width:50px;height:30px;border-radius:99px;background:${c.on ? 'var(--c)' : 'var(--surface-3)'}"></button></div></div>`;
+  K.$('#app').innerHTML = h;
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.w) { off = Math.min(0, off + +b.dataset.w); render(); }
+  else if (b.dataset.act === 'tog') { const c = K.reviewCfg(); c.on = !c.on; K.put('review', c); render(); K.toast(c.on ? 'You get your review every Sunday at ' + c.time : 'Sunday review off'); }
+});
+render();
+</script>
+</body>
+</html>
