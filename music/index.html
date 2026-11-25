@@ -180,8 +180,10 @@ function setup(which) {
         <li>On a computer or phone, open <b>developer.spotify.com/dashboard</b> and log in.</li><li>Tap <b>Create app</b>. Name: Life Hub. Description: My app.</li>
         <li>Under <b>Redirect URIs</b>, paste the address below <b>exactly</b> (tap Copy), tap <b>Add</b>.</li><li>Tick <b>Web API</b>, accept the terms and tap <b>Save</b> at the bottom.</li><li>Open the app’s <b>Settings</b> and copy the <b>Client ID</b> here.</li></ol>` },
       { k: 'redirect', label: 'Redirect URI (must be exactly the same in Spotify)', value: c.redirect || HERE, required: true, attrs: 'autocomplete="off" spellcheck="false"' },
-      { type: 'html', k: 'cp', html: `<div class="row-btns" style="margin:-4px 0 12px"><button class="btn sm" type="button" data-copy-redirect>📋 Copy</button></div>` },
+      { type: 'html', k: 'cp', html: `<div class="row-btns" style="margin:-4px 0 12px"><button class="btn sm" type="button" data-copy-redirect>📋 Copy</button><button class="btn sm" type="button" data-reset-redirect>↺ Use this page’s address</button></div>` },
       { k: 'clientId', label: 'Client ID', value: c.clientId, required: true, placeholder: '32 letters and numbers' },
+      { type: 'html', k: 'dash', html: `<div class="row-btns" style="margin:-4px 0 12px"><a class="btn sm" id="spDash" target="_blank" rel="noopener" href="https://developer.spotify.com/dashboard">⚙️ Open this app’s Spotify settings</a></div>
+        <p class="small muted" style="margin:-6px 0 12px">Opens the Spotify app that belongs to the Client ID above, so you edit the right one. Check its Redirect URIs there.</p>` },
       { type: 'html', k: 'help', html: `<details><summary style="font-weight:700;cursor:pointer">“redirect uri not matching configuration”?</summary><ul class="small muted" style="line-height:1.6;padding-left:18px;margin:8px 0 0">
         <li>The Redirect URI in Spotify must be <b>the same, letter for letter</b>, as the one above: same capitals (<b>life-hub-JT</b> ≠ <b>life-hub-jt</b>) and the <b>/</b> at the end.</li>
         <li>In the Spotify dashboard: your app → <b>Settings</b> → <b>Edit</b> → Redirect URIs. Fix it, tap <b>Add</b>, then <b>Save</b> at the very bottom (easy to miss).</li>
@@ -192,6 +194,12 @@ function setup(which) {
       K.put('music', Object.assign(c, { source: 'spotify', clientId: v.clientId.trim(), redirect: r })); spConnect();
     },
   });
+  if (which === 'spotify') setTimeout(() => {
+    const sh = document.querySelector('.sheet'), dash = sh.querySelector('#spDash'), cid = sh.querySelector('[name="clientId"]'), red = sh.querySelector('[name="redirect"]');
+    const upd = () => { const id = cid.value.trim(); dash.href = /^[0-9a-f]{32}$/i.test(id) ? `https://developer.spotify.com/dashboard/${id}/settings` : 'https://developer.spotify.com/dashboard'; };
+    cid.addEventListener('input', upd); upd();
+    sh.querySelector('[data-reset-redirect]').onclick = () => { red.value = HERE; K.toast('Address reset to ' + HERE); };
+  }, 50);
   if (which === 'spotify') setTimeout(() => { const b = document.querySelector('[data-copy-redirect]'); if (b) b.onclick = async () => { const v = document.querySelector('.sheet [name="redirect"]').value.trim(); try { await navigator.clipboard.writeText(v); b.textContent = '✓ Copied'; } catch { document.querySelector('.sheet [name="redirect"]').select(); } }; }, 50);
   else K.form({
     title: 'Connect Last.fm', saveLabel: 'Connect',
