@@ -37,6 +37,10 @@
   #night .ringbtns button { padding: 22px; border-radius: 22px; font-size: 20px; font-weight: 800; }
   #night .ringbtns .up { background: var(--c); color: #0d0f14; }
   #night .ringbtns .snooze { background: #2a2740; color: #fff; }
+  #ytbox { position: fixed; left: -9999px; top: 0; width: 220px; height: 220px; z-index: 86; border-radius: 16px; overflow: hidden; }
+  #ytbox.show { left: calc(50% - 110px); top: calc(12px + env(safe-area-inset-top)); }
+  .tone { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-top: 1px solid var(--line); }
+  .tone:first-child { border-top: 0; }
   @keyframes flash { 50% { background: #1c1838; } }
 </style>
 </head>
@@ -45,6 +49,7 @@
 <button class="fab" id="fab" type="button" aria-label="New alarm"></button>
 <script src="../lib/kit.js"></script>
 <script src="../lib/agenda.js"></script>
+<script src="../lib/files.js"></script>
 <script>
 const { esc, svg } = K;
 const AL = K.alarms;
@@ -67,7 +72,12 @@ function render() {
     <li><b>Night mode</b>: put your phone on the charger with Life Hub open. The screen stays on (very dim), the alarm rings loudly, and your sleep is tracked.</li>
     <li><b>Set in Clock app</b> copies the alarm into your phone’s own alarm clock, which also rings when the phone is locked. Use it as a back-up.</li>
     <li>Without either, you only get a notification, and only if Life Hub is still running in the background.</li></ul>
-    <button class="btn sm" type="button" data-act="test" style="margin-top:10px">🔊 Test the sound</button></div>`;
+    <button class="btn sm" type="button" data-act="test" style="margin-top:10px">🔊 Test the beeps</button></div>`;
+  const tones = TONES.all();
+  html += `<div class="sec">Alarm sounds<button class="act" type="button" data-act="addYt">+ YouTube</button><button class="act" type="button" data-act="addFile" style="margin-left:12px">+ File</button></div>`;
+  html += tones.length ? `<div class="list">${tones.map(t => `<div class="tone"><span style="font-size:20px">${t.kind === 'yt' ? '▶️' : '🎵'}</span><span class="body"><b>${esc(t.name)}</b><span class="small muted" style="display:block">${t.kind === 'yt' ? 'YouTube' + (t.start ? ` · starts at ${fmtSec(t.start)}` : '') + ' · needs internet' : 'Sound file · works offline'}</span></span>
+      <button class="btn sm" type="button" data-play="${t.id}">🔊</button><button class="btn sm" type="button" data-tone="${t.id}" aria-label="Edit ${esc(t.name)}">✏️</button></div>`).join('')}</div>`
+    : `<p class="hint" style="margin:0 2px 12px">Add songs from YouTube or your own sound files, then pick one per alarm. If a song can’t play (no internet), the beeps take over.</p>`;
   K.$('#app').innerHTML = html;
 }
 function nextDayWith(a) { const now = K.hm(new Date()); for (let i = 0; i < 8; i++) { const d = K.addDays(K.ymd(), i), t = K.alarmTime(a, d); if (t && (i > 0 || t > now)) return d; } return K.ymd(); }   /* the next time it rings, not one that already passed today */
@@ -87,12 +97,14 @@ function edit(a, preset) {
       { k: 'time', label: a.smart ? 'Time on days without school (optional)' : 'Time', type: 'time', value: a.time, required: !a.smart },
       ...(a.smart ? [] : [{ type: 'html', k: '_d', html: `<div class="f"><label>Repeat on</label><div class="days" data-days>${[1, 2, 3, 4, 5, 6, 0].map(d => `<button type="button" data-d="${d}" aria-pressed="${(a.days || []).includes(d)}">${K.DAYS_SHORT[d].slice(0, 2)}</button>`).join('')}</div><div class="small muted" style="margin-top:4px">No days = rings once.</div></div>` }]),
       { k: 'label', label: 'Label', value: a.label, placeholder: a.smart ? 'School' : 'e.g. Gym, Work' },
+      { k: 'sound', label: 'Sound', type: 'select', value: a.sound || 'beep', options: [['beep', '🔔 Beeps']].concat(TONES.all().map(t => [t.id, (t.kind === 'yt' ? '▶️ ' : '🎵 ') + t.name])) },
+      { type: 'html', k: '_snd', html: `<div class="row-btns" style="margin:-4px 0 12px"><button class="btn sm" type="button" data-formtest>🔊 Test</button><button class="btn sm" type="button" data-formyt>+ YouTube song</button></div>` },
       { k: 'snooze', label: 'Snooze minutes', type: 'number', value: a.snooze || 9, half: true },
       { k: 'on', label: 'On', type: 'checkbox', value: a.on, half: true },
     ],
     save(v) {
       const days = a.smart ? [] : [...f.querySelectorAll('[data-days] [aria-pressed="true"]')].map(b => +b.dataset.d);
-      Object.assign(a, { time: v.time, label: v.label, snooze: v.snooze || 9, on: v.on, days });
+      Object.assign(a, { time: v.time, label: v.label, snooze: v.snooze || 9, on: v.on, days, sound: v.sound || 'beep' });
       if (a.smart) { const mc = K.morningCfg(), changed = mc.ready !== (v.ready || 45) || mc.early !== (v.early || 0) || mc.bus !== v.bus;
         K.put('morning', Object.assign(mc, { ready: v.ready || 45, early: v.early || 0, bus: v.bus }));
         if (changed) { K.put('mornings', {}); planAhead(true); } }
@@ -101,6 +113,10 @@ function edit(a, preset) {
       const nx = K.nextAlarm(); if (nx && nx.a.id === a.id) K.toast(`Alarm in ${until(nx.at)}`);
     },
     del: isNew ? null : () => { AL.remove(a.id); render(); K.toast('Alarm deleted', () => { AL.upsert(a); render(); }); },
+  });
+  f.addEventListener('click', e => {
+    if (e.target.closest('[data-formtest]')) preview(f.elements.sound.value);
+    if (e.target.closest('[data-formyt]')) { f.parentElement.remove(); addYouTube(a); }
   });
   const dd = f.querySelector('[data-days]'); if (dd) dd.addEventListener('click', e => { const b = e.target.closest('button'); if (b) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true'); });
 }
@@ -125,6 +141,7 @@ async function startNight() {
     <div class="acts"><button type="button" data-act="up">☀️ I’m up</button><button type="button" data-act="stopNight">Stop night mode</button></div>`;
   document.body.appendChild(el);
   try { await document.documentElement.requestFullscreen(); } catch {}
+  prepareYt();
   tickNight(); night.timer = setInterval(tickNight, 1000);
   planAhead(true); night.planner = setInterval(() => planAhead(true), 30 * 60000);   /* bus delays or cancellations move the alarm */
   document.addEventListener('visibilitychange', relock);
@@ -145,13 +162,20 @@ function tickNight() {
 function ring(a) {
   night.ringing = true; night.ringingAlarm = a; K.$('#night').classList.add('ring');
   K.$('#nSub').textContent = (a && a.label) || 'Wake up!';
+  if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
+  K.showNotification('⏰ ' + ((a && a.label) || 'Wake up!'), 'Tap to stop the alarm', location.href, 'alarm');
+  const tone = a && a.sound && a.sound !== 'beep' ? TONES.byId(a.sound) : null;
+  if (tone) playTone(tone, true).then(ok => { if (!ok && night && night.ringing) startBeeps(); });
+  else startBeeps();
+}
+function startBeeps() {
+  if (!night || night.beeper) return;
   const ctx = night.ctx, t0 = ctx.currentTime, g = ctx.createGain(); g.connect(ctx.destination); g.gain.setValueAtTime(0.02, t0); g.gain.linearRampToValueAtTime(0.9, t0 + 40);   /* gets louder over 40 s */
   night.gain = g; night.oscs = [];
   const beep = () => { if (!night || !night.ringing) return; const now = ctx.currentTime; [0, .25, .5].forEach((d, i) => { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = i === 2 ? 1046 : 880; const e = ctx.createGain(); e.gain.setValueAtTime(0, now + d); e.gain.linearRampToValueAtTime(1, now + d + .02); e.gain.linearRampToValueAtTime(0, now + d + .2); o.connect(e); e.connect(g); o.start(now + d); o.stop(now + d + .22); }); if (navigator.vibrate) navigator.vibrate([400, 200, 400]); };
   beep(); night.beeper = setInterval(beep, 1300);
-  K.showNotification('⏰ ' + ((a && a.label) || 'Wake up!'), 'Tap to stop the alarm', location.href, 'alarm');
 }
-function stopRing() { if (!night) return; night.ringing = false; clearInterval(night.beeper); if (navigator.vibrate) navigator.vibrate(0); try { night.gain.disconnect(); } catch {} K.$('#night')?.classList.remove('ring'); }
+function stopRing() { if (!night) return; night.ringing = false; clearInterval(night.beeper); night.beeper = null; stopTone(); if (navigator.vibrate) navigator.vibrate(0); try { night.gain.disconnect(); } catch {} K.$('#night')?.classList.remove('ring'); }
 function stopNight(woke) {
   if (!night) return; stopRing(); clearInterval(night.timer); clearInterval(night.planner); try { night.lock && night.lock.release(); } catch {} try { night.ctx.close(); } catch {}
   document.removeEventListener('visibilitychange', relock); K.$('#night')?.remove(); try { document.exitFullscreen(); } catch {}
@@ -162,6 +186,101 @@ function stopNight(woke) {
   } else if (!woke && p && Date.now() - new Date(p) < 10 * 60000) localStorage.removeItem('hub.sleep.pending');   /* stopped right after starting */
   night = null; render();
 }
+/* ================= alarm sounds: YouTube songs (official player) and your own files ================= */
+const TONES = K.coll('alarmtones');
+/* the four songs you picked, added once (same ids on every device, so sync never doubles them) */
+(function seedTones() {
+  try { if (localStorage.getItem('hub.alarmtones_seeded')) return; localStorage.setItem('hub.alarmtones_seeded', '1'); } catch { return; }
+  [['ykXEppvKyog', 0], ['pO8Gc54G4l4', 0], ['Vkj8zlpyWVw', 0], ['BeNN-9-zR9Y', 0]].forEach(([yt, start], i) => {
+    if (TONES.byId('yt_' + yt) || TONES.all().some(t => t.yt === yt)) return;
+    TONES.upsert({ id: 'yt_' + yt, kind: 'yt', yt, start, name: 'YouTube song ' + (i + 1) });
+    ytTitle(yt).then(n => { const t = TONES.byId('yt_' + yt); if (n && t && /^YouTube song \d$/.test(t.name)) { t.name = n.slice(0, 60); TONES.upsert(t); render(); } });
+  });
+})();
+const fmtSec = n => `${Math.floor(n / 60)}:${K.pad(n % 60)}`;
+function ytId(url) { const m = String(url).match(/(?:v=|youtu\.be\/|shorts\/|embed\/|live\/)([\w-]{11})/); return m ? m[1] : (/^[\w-]{11}$/.test(url) ? url : null); }
+function ytStart(url) { const m = String(url).match(/[?&#](?:t|start)=(?:(\d+)h)?(?:(\d+)m)?(\d+)?s?/); return m ? (+(m[1] || 0)) * 3600 + (+(m[2] || 0)) * 60 + (+(m[3] || 0)) : 0; }
+async function ytTitle(id) { try { const r = await fetch('https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + id)); if (r.ok) return (await r.json()).title || ''; } catch {} return ''; }
+function addYouTube(backTo) {
+  const f = K.form({
+    title: 'Add YouTube songs', saveLabel: 'Add',
+    fields: [{ k: 'links', label: 'YouTube links (one per line, you can paste several)', type: 'textarea', placeholder: 'https://www.youtube.com/watch?v=…', required: true, attrs: 'rows="4" spellcheck="false"' },
+      { type: 'html', k: 'h', html: `<p class="small muted" style="margin-top:-4px">Life Hub plays them with YouTube’s own player in night mode (internet needed). Links with a time (&t=45) start there.</p>` }],
+    async save(v) {
+      const ids = [...new Set(v.links.split(/\s+/).map(l => l.trim()).filter(Boolean).map(l => ({ id: ytId(l), start: ytStart(l) })).filter(x => x.id).map(x => JSON.stringify(x)))].map(x => JSON.parse(x));
+      if (!ids.length) { K.toast('No YouTube links found. Paste links like youtube.com/watch?v=…'); return false; }
+      let n = TONES.all().filter(t => t.kind === 'yt').length;
+      for (const x of ids) { if (TONES.all().some(t => t.yt === x.id)) continue; const name = await ytTitle(x.id) || `YouTube song ${++n}`; TONES.upsert({ id: K.uid(), kind: 'yt', yt: x.id, start: x.start, name: name.slice(0, 60) }); }
+      render(); K.toast(`Added ${K.plural(ids.length, 'song')}. Pick one in an alarm.`);
+      if (backTo) setTimeout(() => edit(backTo.id && AL.byId(backTo.id) ? AL.byId(backTo.id) : null, backTo.id ? null : backTo), 300);
+    },
+  });
+}
+function addFile() {
+  const i = document.createElement('input'); i.type = 'file'; i.accept = 'audio/*';
+  i.onchange = async () => { const file = i.files[0]; if (!file) return; if (file.size > 15 * 1048576) return K.toast('That file is too big (max 15 MB).');
+    const fileId = await K.files.put(file, file.name); K.files.keep(); TONES.upsert({ id: K.uid(), kind: 'file', fileId, name: file.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 60) }); render(); K.toast('Sound added. Pick it in an alarm.'); };
+  i.click();
+}
+function editTone(t) {
+  K.form({ title: t.name, fields: [{ k: 'name', label: 'Name', value: t.name, required: true }, ...(t.kind === 'yt' ? [{ k: 'start', label: 'Start at (seconds into the song)', type: 'number', value: t.start || 0, hint: 'Skip a slow intro, e.g. 30' }] : [])],
+    save(v) { t.name = v.name; if (t.kind === 'yt') t.start = Math.max(0, Math.round(v.start || 0)); TONES.upsert(t); render(); },
+    del: () => { if (!confirm(`Delete “${t.name}”? Alarms using it go back to beeps.`)) return false; if (t.fileId) K.files.del(t.fileId); TONES.remove(t.id); AL.all().filter(a => a.sound === t.id).forEach(a => { a.sound = 'beep'; AL.upsert(a); }); render(); } });
+}
+/* YouTube IFrame API, loaded once */
+let ytApi = null;
+function loadYtApi() {
+  if (ytApi) return ytApi;
+  ytApi = new Promise((res, rej) => { if (window.YT && YT.Player) return res(YT); window.onYouTubeIframeAPIReady = () => res(YT);
+    const sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api'; sc.onerror = () => { ytApi = null; rej(new Error('YouTube could not load')); }; document.head.appendChild(sc); setTimeout(() => rej(new Error('YouTube took too long')), 15000); });
+  return ytApi;
+}
+let yt = null, audioEl = null, ramp = null;
+async function ytPlayer() {
+  if (yt) return yt;
+  await loadYtApi();
+  let box = document.getElementById('ytbox'); if (!box) { box = document.createElement('div'); box.id = 'ytbox'; box.innerHTML = '<div id="ytp"></div>'; document.body.appendChild(box); }
+  yt = await new Promise(res => { const p = new YT.Player('ytp', { width: 220, height: 220, playerVars: { playsinline: 1, controls: 0, disablekb: 1, rel: 0 }, events: { onReady: () => res(p), onStateChange: e => { if (e.data === 0 && p._tone) p.seekTo(p._tone.start || 0, true); } } }); });
+  const ifr = yt.getIframe && yt.getIframe(); if (ifr) ifr.setAttribute('allow', 'autoplay; encrypted-media');
+  return yt;
+}
+/* when night mode starts (your tap), get YouTube ready so it may play hours later */
+function prepareYt() { if (AL.all().some(a => a.on && a.sound && (TONES.byId(a.sound) || {}).kind === 'yt')) ytPlayer().catch(() => {}); }
+/* play a sound; resolves true when it's really playing (louder over 40 s when ringing) */
+async function playTone(t, ringing) {
+  stopTone();
+  const startVol = ringing ? 15 : 70; let v = startVol;
+  try {
+    if (t.kind === 'yt') {
+      const p = await ytPlayer(); p._tone = t; document.getElementById('ytbox').classList.add('show');
+      p.setVolume(startVol); p.unMute(); p.loadVideoById({ videoId: t.yt, startSeconds: t.start || 0 });
+      for (let i = 0; i < 16; i++) { await new Promise(r => setTimeout(r, 500)); if (p.getPlayerState() === 1) break; }
+      if (p.getPlayerState() !== 1) { stopTone(); return false; }
+      if (ringing) ramp = setInterval(() => { v = Math.min(100, v + 2.2); p.setVolume(v); }, 1000);
+      return true;
+    }
+    const f = await K.files.get(t.fileId); if (!f) return false;
+    audioEl = new Audio(URL.createObjectURL(f.blob)); audioEl.loop = true; audioEl.volume = startVol / 100;
+    await audioEl.play();
+    if (ringing) ramp = setInterval(() => { v = Math.min(100, v + 2.2); audioEl.volume = v / 100; }, 1000);
+    return true;
+  } catch { stopTone(); return false; }
+}
+function stopTone() {
+  clearInterval(ramp); ramp = null;
+  try { if (yt) { yt.stopVideo(); yt._tone = null; } } catch {} document.getElementById('ytbox')?.classList.remove('show');
+  if (audioEl) { try { audioEl.pause(); URL.revokeObjectURL(audioEl.src); } catch {} audioEl = null; }
+}
+/* 🔊 buttons: play 10 seconds */
+async function preview(id) {
+  if (!id || id === 'beep') return testSound();
+  const t = TONES.byId(id); if (!t) return;
+  K.toast('Playing ' + t.name + '…');
+  const ok = await playTone(t, false);
+  if (!ok) return K.toast(t.kind === 'yt' ? 'YouTube didn’t play (no internet, or this video can’t be embedded). The beeps would ring instead.' : 'That sound file couldn’t play.');
+  setTimeout(stopTone, 10000);
+}
+
 function testSound() {
   const ctx = new (window.AudioContext || window.webkitAudioContext)(), now = ctx.currentTime;
   [0, .25, .5, 1.3, 1.55, 1.8].forEach((d, i) => { const o = ctx.createOscillator(), e = ctx.createGain(); o.frequency.value = i % 3 === 2 ? 1046 : 880; e.gain.setValueAtTime(0, now + d); e.gain.linearRampToValueAtTime(.6, now + d + .02); e.gain.linearRampToValueAtTime(0, now + d + .2); o.connect(e); e.connect(ctx.destination); o.start(now + d); o.stop(now + d + .22); });
@@ -179,6 +298,10 @@ document.addEventListener('click', e => {
   else if (d.act === 'up') stopNight(true);
   else if (d.act === 'snooze') { const m = +((night.ringingAlarm || {}).snooze || 9); stopRing(); night.snoozeUntil = Date.now() + m * 60000; }
   else if (d.act === 'test') testSound();
+  else if (d.act === 'addYt') addYouTube();
+  else if (d.act === 'addFile') addFile();
+  else if (d.play) preview(d.play);
+  else if (d.tone) editTone(TONES.byId(d.tone));
   else if (b.id === 'fab') AL.all().some(a => a.smart) ? edit() : K.form({ title: 'New alarm', saveLabel: 'Close', fields: [{ type: 'html', k: 'x', html: `<div class="list"><button class="item" type="button" data-pickkind="normal" style="width:100%"><span style="font-size:22px">⏰</span><span class="body title">Normal alarm</span></button><button class="item" type="button" data-pickkind="school" style="width:100%"><span style="font-size:22px">🎓</span><span class="body"><span class="title">School alarm</span><span class="meta"><span>Follows your first lesson every day</span></span></span></button></div>` }], save: () => {} });
   else if (d.pickkind) { b.closest('.sheet-bg').remove(); d.pickkind === 'school' ? edit(null, { smart: true, label: 'School', time: '' }) : edit(); }
 });
