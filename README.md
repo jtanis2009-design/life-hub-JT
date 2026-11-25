@@ -15,7 +15,8 @@ My all-in-one everyday app. One icon on my phone for travel, workouts and (soon)
 - **Sleep** (`sleep/`): one-tap bedtime and wake-up, sleep debt, 14-night chart, bedtime worked out from your first lesson, caffeine warning.
 - **Shopping** (`shopping/`): groceries sorted by aisle automatically, plus a wishlist with savings progress.
 - **Notes** (`notes/`): notes with pins, tags, checklists and search, plus a daily journal with a mood chart.
-- **Money** (`money/`): quick add ("5,50 kebab", "+20 pocket money"), categories, monthly budgets, savings goals, subscriptions with reminders.
+- **Money** (`money/`): quick add ("5,50 kebab", "+20 pocket money"), categories, monthly budgets, savings goals, subscriptions with reminders, and **bank import**: download your transactions file from ING, Rabobank, ABN AMRO, bunq (or most other Dutch banks) and import it. Shops get the right category (and remember your corrections), payments already in Life Hub are skipped, and moves to your own savings are left out.
+- **Receipts** (Money → Receipts): keep PDFs, photos of paper receipts and links to online orders, linked to the payment, with warranty dates. Share a PDF or screenshot from any Android app to **Life Hub** to save it.
 - **Privacy lock**: a PIN for the whole app, with an extra lock on Notes and Money.
 - **Backup**: one file with everything, restore it any time. Logins and the AI key are left out.
 - **Reminders**: phone notifications for to-dos, homework, tests, events, birthdays, habits, bedtime and subscriptions while Life Hub is open or in the background.
@@ -31,6 +32,8 @@ Plain web pages, no build step. Each app lives in its own folder and keeps worki
 | `hub.js` | Loaded by every page: PIN lock and the Home button |
 | `lib/kit.css`, `lib/kit.js` | Shared look, saving, forms, dates and the quick-add parser |
 | `lib/agenda.js` | Every app's data, the combined day agenda and the reminder engine |
+| `lib/files.js` | Receipt files stored on the phone (IndexedDB) |
+| `lib/bankimport.js` | Reads bank transaction files (ING, Rabobank, ABN AMRO, bunq and others) |
 | `sw.js` | One offline cache for the whole hub (network first) |
 | `manifest.webmanifest` | Makes it one installable app |
 

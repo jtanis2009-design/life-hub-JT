@@ -30,25 +30,48 @@
 <button class="fab" id="fab" type="button" aria-label="Add"></button>
 <script src="../lib/kit.js"></script>
 <script src="../lib/agenda.js"></script>
+<script src="../lib/files.js"></script>
+<script src="../lib/bankimport.js"></script>
 <script>
 const { esc, svg, eur } = K;
-const OUT = [['Food & drinks', '🍔', /kebab|mc|burger|pizza|snack|lunch|döner|doner|subway|kfc|frites|patat|coffee|koffie|starbucks|monster|drink|broodje|food|eten/i],
-  ['Groceries', '🛒', /albert|ah\b|jumbo|lidl|aldi|plus\b|dirk|grocer|boodschap/i], ['Transport', '🚌', /bus|ov|ns\b|train|trein|metro|ret\b|fiets|bike|benzine|fuel|uber/i],
-  ['Going out', '🎉', /cinema|bios|party|feest|club|bowling|concert|ticket/i], ['Clothes', '👕', /shirt|shoes|schoen|jacket|jas|broek|pants|hoodie|zara|h&m|nike|adidas|kleding/i],
-  ['Gaming', '🎮', /game|steam|psn|playstation|xbox|nintendo|fortnite|v-?bucks|robux|roblox/i], ['Subscriptions', '📱', /spotify|netflix|disney|youtube|abonnement|subscription|icloud|prime/i],
-  ['Gym & health', '💪', /gym|basic.?fit|protein|whey|creatine|supplement/i], ['School', '📚', /book|boek|school|pen|schrift|laptop|printer/i], ['Gifts', '🎁', /gift|cadeau|present/i], ['Other', '💸', /$^/]];
-const IN = [['Job', '💼', /salary|salaris|loon|job|werk|shift/i], ['Pocket money', '👛', /pocket|zakgeld/i], ['Gift', '🎁', /gift|cadeau|birthday|verjaardag/i], ['Sold something', '🏷️', /sold|verkocht|marktplaats|vinted/i], ['Other', '💰', /$^/]];
+const OUT = [['Food & drinks', '🍔', /kebab|mcdonald|\bmc ?d|burger|pizza|domino|new york pizza|snack|lunch|döner|doner|subway|kfc|frites|patat|coffee|koffie|starbucks|monster|red ?bull|drink|broodje|food|eten|thuisbezorgd|uber ?eats|deliveroo|febo|smullers|wok|sushi|restaurant|cafetaria|bakker|kiosk|hema/i],
+  ['Groceries', '🛒', /albert heijn|\bah\b|ah to go|jumbo|lidl|aldi|\bplus\b|dirk|grocer|boodschap|spar\b|coop\b|picnic|vomar|hoogvliet|deen|dekamarkt|poiesz|ekoplaza|crisp/i],
+  ['Transport', '🚌', /\bbus\b|\bov\b|ov-?chip|ns\b|ns groep|ns reizigers|train|trein|metro|\bret\b|arriva|connexxion|qbuzz|keolis|ebs|htm|gvb|fiets|bike|swapfiets|benzine|fuel|shell|esso|bp\b|tinq|tango|uber\b|bolt\b|parkeer|parking/i],
+  ['Going out', '🎉', /cinema|bios|pathé|pathe|vue\b|kinepolis|party|feest|club|bowling|concert|ticket|ticketmaster|eventim|festival|escape|lasergame/i],
+  ['Clothes', '👕', /shirt|shoes|schoen|jacket|jas|broek|pants|hoodie|zara|h&m|h & m|nike|adidas|kleding|primark|jd sports|zalando|about you|snipes|foot ?locker|we fashion|c&a|only\b|jack ?& ?jones|bershka|pull ?& ?bear|uniqlo|vinted/i],
+  ['Gaming', '🎮', /game|steam|valve|psn|playstation|sony interactive|xbox|microsoft\*xbox|nintendo|fortnite|epic games|v-?bucks|robux|roblox|riot|blizzard|ea\.com|gamemania|g2a|instant gaming|twitch/i],
+  ['Subscriptions', '📱', /spotify|netflix|disney|youtube|abonnement|subscription|icloud|apple\.com|google \*|google play|prime video|amazon prime|videoland|chatgpt|openai|discord|snapchat|duolingo|lebara|lyca|simyo|ben\b|odido|t-mobile|kpn|vodafone|youfone/i],
+  ['Gym & health', '💪', /gym|basic.?fit|sportcity|fit ?for ?free|anytime fitness|trainmore|protein|whey|creatine|supplement|myprotein|bodyandfit|body & fit|xxl nutrition|etos|kruidvat|trekpleister|apotheek|pharmacy/i],
+  ['School', '📚', /book|boek|bruna|school|pen\b|schrift|laptop|printer|grafisch lyceum|studiegeld|lesgeld|duo\b|canon|adobe/i],
+  ['Shopping', '🛍️', /bol\.com|\bbol\b|amazon|coolblue|mediamarkt|action\b|blokker|ikea|aliexpress|temu|shein|wish\b|marktplaats|apple store|alternate|megekko|azerty/i],
+  ['Gifts', '🎁', /gift|cadeau|present|bloemen|flowers|intertoys|lego/i],
+  ['Tikkie & friends', '🤝', /tikkie|betaalverzoek|terugbetaling|lend|geleend/i],
+  ['Cash', '💶', /\batm\b|geldautomaat|geldopname|opname|cash/i],
+  ['Other', '💸', /$^/]];
+const IN = [['Job', '💼', /salary|salaris|loon|job|werk|shift|uitzend|randstad|tempo.?team|youngcapital|olympia|start people|payroll|nettoloon|vakantiegeld/i], ['Pocket money', '👛', /pocket|zakgeld/i],
+  ['Gift', '🎁', /gift|cadeau|birthday|verjaardag|sinterklaas|kerst/i], ['Sold something', '🏷️', /sold|verkocht|marktplaats|vinted|ebay/i], ['Refund', '↩️', /refund|retour|terugbetaling|restitutie|terugstorting|creditnota/i],
+  ['Tikkie & friends', '🤝', /tikkie|betaalverzoek/i], ['Other', '💰', /$^/]];
 const catOf = (list, text) => (list.find(c => c[2].test(text)) || list[list.length - 1])[0];
+/* categories you corrected are remembered per shop/person and used next time */
+const partyKey = n => String(n || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').slice(0, 3).join(' ');
+function catFor(type, name, desc) {
+  const rules = K.get('money.rules', {}) || {}, r = rules[type + ':' + partyKey(name)];
+  if (r && (type === 'in' ? IN : OUT).some(c => c[0] === r)) return r;
+  return catOf(type === 'in' ? IN : OUT, (name || '') + ' ' + (desc || ''));
+}
+function learn(t) { if (!t.party) return; const rules = K.get('money.rules', {}) || {}; rules[t.type + ':' + partyKey(t.party)] = t.cat; K.put('money.rules', rules); }
+const receiptFor = id => K.receipts.all().find(r => r.txId === id);
 const emo = (type, c) => ((type === 'in' ? IN : OUT).find(x => x[0] === c) || ['', '💸'])[1];
 const COLORS = ['#3ecf9a', '#56ccf2', '#8b7cff', '#f25f8a', '#ffcf5c', '#f2994a', '#ff7b7b', '#b48cff', '#5db3e4', '#c9b37e', '#9097a8'];
-const TABS = [['month', 'Month'], ['budgets', 'Budgets'], ['savings', 'Savings'], ['subs', 'Subscriptions']];
+const TABS = [['month', 'Month'], ['receipts', 'Receipts'], ['budgets', 'Budgets'], ['savings', 'Savings'], ['subs', 'Subscriptions']];
 let tab = TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : 'month';
 let ym = K.ymd().slice(0, 7);
 
 function monthTx(m = ym) { return K.money.all().filter(t => String(t.date).slice(0, 7) === m); }
 function render() {
   let html = K.header('Money', 'money') + `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}</button>`).join('')}</div>`;
-  html += ({ month: monthHtml, budgets: budgetsHtml, savings: savingsHtml, subs: subsHtml })[tab]();
+  html += ({ month: monthHtml, receipts: receiptsHtml, budgets: budgetsHtml, savings: savingsHtml, subs: subsHtml })[tab]();
+  if (tab === 'receipts') loadThumbs();
   K.$('#app').innerHTML = html;
 }
 
@@ -58,6 +81,7 @@ function monthHtml() {
   const out = tx.filter(t => t.type !== 'in').reduce((a, t) => a + K.num(t.amount), 0), inn = tx.filter(t => t.type === 'in').reduce((a, t) => a + K.num(t.amount), 0);
   let html = `<form class="quick" id="quick" autocomplete="off"><input id="q" placeholder="5,50 kebab  ·  +20 pocket money" aria-label="Quick add spending or income" inputmode="text"><button class="btn primary" type="submit" aria-label="Add">${svg('plus', 'width="18" height="18"')}</button></form>
     <div class="mhead"><button class="iconbtn" type="button" data-m="-1" aria-label="Previous month">${svg('left')}</button><h2>${K.MONTHS[m - 1]} ${y}</h2><button class="iconbtn" type="button" data-m="1" aria-label="Next month">${svg('right')}</button></div>
+    <div class="row-btns" style="margin:-2px 0 12px"><button class="btn sm" type="button" data-act="import">🏦 Import from bank</button><button class="btn sm" type="button" data-act="addReceipt">🧾 Add receipt</button>${lastImport()}</div>
     <div class="grid2"><div class="stat"><div class="k">Spent</div><div class="v num">${eur(out)}</div><div class="s">${tx.filter(t => t.type !== 'in').length} payments</div></div>
     <div class="stat"><div class="k">Came in</div><div class="v num in">${eur(inn)}</div><div class="s">${inn - out >= 0 ? 'Left over ' + eur(inn - out) : 'Short ' + eur(out - inn)}</div></div></div>`;
   if (out) {
@@ -76,7 +100,7 @@ function monthHtml() {
 }
 function txRow(t) {
   return `<button class="item" type="button" data-tx="${t.id}" style="width:100%"><span style="font-size:20px;width:26px;text-align:center">${emo(t.type, t.cat)}</span>
-    <span class="body"><span class="title">${esc(t.note || t.cat)}</span><span class="meta"><span>${esc(t.cat)}</span></span></span>
+    <span class="body"><span class="title">${esc(t.note || t.party || t.cat)}</span><span class="meta"><span>${esc(t.cat)}</span>${receiptFor(t.id) ? '<span>🧾 receipt</span>' : ''}${t.src === 'bank' ? '<span>🏦</span>' : ''}</span></span>
     <span class="right num ${t.type === 'in' ? 'in' : ''}">${t.type === 'in' ? '+' : '−'}${eur(t.amount)}</span></button>`;
 }
 function quickAdd(text) {
@@ -87,7 +111,7 @@ function quickAdd(text) {
   if (!(amount > 0)) { K.toast('That amount isn’t right'); return false; }
   note = (note || '').trim();
   const type = sign === '+' || /^(pocket money|zakgeld|salary|salaris|loon)/i.test(note) ? 'in' : 'out';
-  const t = K.money.upsert({ id: K.uid(), type, amount, note, cat: catOf(type === 'in' ? IN : OUT, note), date: ym === K.ymd().slice(0, 7) ? K.ymd() : ym + '-01' });
+  const t = K.money.upsert({ id: K.uid(), type, amount, note, cat: catFor(type, note), date: ym === K.ymd().slice(0, 7) ? K.ymd() : ym + '-01' });
   checkBudget(t);
   return true;
 }
@@ -110,14 +134,17 @@ function editTx(t, type) {
       { k: 'date', label: 'Date', type: 'date', value: t.date, half: true },
       { k: 'note', label: 'What for', value: t.note },
       { k: 'cat', label: 'Category', type: 'select', value: t.cat || cats()[0][0], options: cats() },
+      ...(t.party && t.party !== t.note ? [{ type: 'html', k: '_p', html: `<p class="small muted" style="margin:-4px 0 10px">From your bank: ${esc(t.party)}${t.desc ? ' · ' + esc(t.desc) : ''}</p>` }] : []),
+      ...(isNew ? [] : [{ type: 'html', k: '_r', html: receiptFor(t.id) ? `<button class="btn block" type="button" data-openr="${receiptFor(t.id).id}" style="margin-bottom:6px">🧾 View receipt</button>` : `<button class="btn block" type="button" data-attach="${t.id}" style="margin-bottom:6px">🧾 Attach a receipt</button>` }]),
     ],
     change(v, form) {
       if (v.type !== t.type) { t.type = v.type; form.elements.cat.innerHTML = cats().map(([a, b]) => `<option value="${esc(a)}">${esc(b)}</option>`).join(''); }
       if (isNew && v.note && document.activeElement === form.elements.note) form.elements.cat.value = catOf(t.type === 'in' ? IN : OUT, v.note);
     },
-    save(v) { if (!(v.amount > 0)) { K.toast('Fill in an amount'); return false; } Object.assign(t, v); K.money.upsert(t); render(); if (isNew) checkBudget(t); },
-    del: isNew ? null : () => { K.money.remove(t.id); render(); K.toast('Deleted', () => { K.money.upsert(t); render(); }); },
+    save(v) { if (!(v.amount > 0)) { K.toast('Fill in an amount'); return false; } const catChanged = t.cat && t.cat !== v.cat; Object.assign(t, v); K.money.upsert(t); if (catChanged) { learn(t); if (t.party) K.toast(`Got it: ${t.party} is ${t.cat} from now on`); } render(); if (isNew) checkBudget(t); },
+    del: isNew ? null : () => { K.money.remove(t.id); const r = receiptFor(t.id); if (r) { r.txId = ''; K.receipts.upsert(r); } render(); K.toast('Deleted', () => { K.money.upsert(t); render(); }); },
   });
+  f.addEventListener('click', e => { const b = e.target.closest('[data-attach],[data-openr]'); if (!b) return; f.parentElement.remove(); if (b.dataset.attach) pickReceipt(t.id); else editReceipt(K.receipts.byId(b.dataset.openr)); });
 }
 
 /* ---------- budgets ---------- */
@@ -188,6 +215,173 @@ function editSub(s) {
     del: isNew ? null : () => { K.subs.remove(s.id); render(); } });
 }
 
+/* ================= bank import ================= */
+function lastImport() { const li = K.get('money.lastImport', null); return li ? `<span class="small muted" style="align-self:center">Last import ${esc(K.fmtDayIn(K.ymd(new Date(li.at))))}</span>` : ''; }
+function pickFile(accept, capture, multiple) {
+  return new Promise(res => {
+    const i = document.createElement('input'); i.type = 'file'; i.accept = accept; if (capture) i.capture = 'environment'; if (multiple) i.multiple = true;
+    i.style.display = 'none'; document.body.appendChild(i);
+    i.onchange = () => { res([...i.files]); i.remove(); };
+    i.click();
+  });
+}
+async function pickBankFile() {
+  const [file] = await pickFile('.csv,.tab,.txt,text/csv,text/plain,text/tab-separated-values');
+  if (!file) return;
+  let parsed;
+  try { parsed = await K.bank.parse(file); } catch (err) { K.form({ title: 'Couldn’t read that file', saveLabel: 'OK', fields: [{ type: 'html', k: 'x', html: `<p>${esc(err.message)}</p>${bankHelp()}` }], save: () => {} }); return; }
+  showImport(parsed);
+}
+function bankHelp() {
+  return `<details style="margin-top:6px"><summary style="font-weight:700;cursor:pointer">How do I get the file from my bank?</summary><div class="small muted" style="line-height:1.6;margin-top:8px">
+    <b>ING</b>: Mijn ING (website) → your account → Af- en bijschrijvingen downloaden → format <b>Kommagescheiden CSV</b>.<br>
+    <b>Rabobank</b>: Rabo Internetbankieren → Betalen en sparen → Download transacties → <b>CSV</b>.<br>
+    <b>ABN AMRO</b>: Internet Banking → Bij- en afschrijvingen → Downloaden → <b>TXT</b> (tab).<br>
+    <b>bunq</b>: app → the account → ⋯ → Export statement → <b>CSV</b>.<br>
+    <b>SNS, ASN, RegioBank, Knab, Triodos</b>: look for “transacties downloaden” or “exporteren” and pick <b>CSV</b>.<br>
+    Then come back here and pick the downloaded file.</div></details>`;
+}
+function showImport({ bank, items }) {
+  const have = new Set(K.money.all().map(t => t.bank).filter(Boolean));
+  const manual = K.money.all().filter(t => t.src !== 'bank');
+  const own = new Set((K.get('money.ownIbans', []) || []).map(x => x.toUpperCase()));
+  const rows = items.map((it, i) => {
+    const key = K.bank.key(it);
+    const dup = have.has(key);
+    /* typed in by hand already? same day (±1), same amount, same direction */
+    const typed = !dup && manual.find(t => t.type === it.type && Math.abs(K.num(t.amount) - it.amount) < 0.01 && Math.abs(K.daysUntil(t.date) - K.daysUntil(it.date)) <= 1);
+    const transfer = K.bank.isTransfer(it, own);
+    return { ...it, i, key, dup, typed, transfer, cat: catFor(it.type, it.name, it.desc), on: !dup && !typed && !transfer };
+  }).sort((a, b) => a.date < b.date ? 1 : -1);
+  const fresh = rows.filter(r => !r.dup);
+  const from = items.reduce((a, x) => x.date < a ? x.date : a, '9999'), to = items.reduce((a, x) => x.date > a ? x.date : a, '0000');
+  const optsFor = r => (r.type === 'in' ? IN : OUT).map(c => `<option value="${esc(c[0])}" ${c[0] === r.cat ? 'selected' : ''}>${c[1]} ${esc(c[0])}</option>`).join('');
+  const html = `<p class="small muted" style="margin:-6px 0 10px">${esc(bank)} · ${K.plural(items.length, 'payment')} from ${K.fmtDate(from)} to ${K.fmtDate(to)}.<br>
+      ${rows.filter(r => r.dup).length ? `${rows.filter(r => r.dup).length} already imported (hidden). ` : ''}${rows.filter(r => r.typed).length ? `${rows.filter(r => r.typed).length} look like ones you typed in yourself, ` : ''}${rows.filter(r => r.transfer).length ? `${rows.filter(r => r.transfer).length} look like moves to your own savings, ` : ''}${rows.some(r => r.typed || r.transfer) ? 'so they’re unticked.' : ''}</p>
+    ${fresh.length ? `<div class="row-btns" style="margin-bottom:8px"><button class="btn sm" type="button" data-all="1">Tick all</button><button class="btn sm" type="button" data-all="0">Untick all</button></div>
+    <div class="list" style="max-height:48vh;overflow-y:auto">${fresh.map(r => `<div class="item" style="align-items:flex-start;gap:10px">
+      <input type="checkbox" data-row="${r.i}" ${r.on ? 'checked' : ''} style="width:20px;height:20px;margin-top:3px;flex:none" aria-label="Import ${esc(r.name)}">
+      <div class="body"><div class="title" style="font-size:14px">${esc(r.name || '(no name)')}</div>
+        <div class="meta"><span>${esc(K.fmtDay(r.date))}</span>${r.typed ? '<span class="soon">already typed in?</span>' : ''}${r.transfer ? '<span class="soon">own savings?</span>' : ''}</div>
+        <select data-cat="${r.i}" style="margin-top:6px;padding:6px 8px;font-size:13px">${optsFor(r)}</select></div>
+      <div class="right num ${r.type === 'in' ? 'in' : ''}" style="font-size:14px">${r.type === 'in' ? '+' : '−'}${eur(r.amount)}</div></div>`).join('')}</div>`
+    : '<div class="empty" style="padding:16px"><b>Nothing new</b>Everything in this file is already in Life Hub.</div>'}`;
+  const f = K.form({
+    title: `Import from ${bank}`, saveLabel: fresh.length ? 'Import' : 'Close',
+    fields: [{ type: 'html', k: 'x', html }],
+    save() {
+      if (!fresh.length) return;
+      const pick = [...f.querySelectorAll('[data-row]')].filter(c => c.checked).map(c => +c.dataset.row);
+      const list = K.money.all(); let n = 0, out = 0, inn = 0;
+      for (const r of fresh.filter(r => pick.includes(r.i))) {
+        const cat = f.querySelector(`[data-cat="${r.i}"]`).value;
+        const t = K.stamp({ id: K.uid(), type: r.type, amount: r.amount, date: r.date, note: r.name, party: r.name, desc: r.desc, cat, src: 'bank', bank: r.key, created: Date.now() });
+        if (cat !== r.cat) learn(t);
+        list.push(t); n++; if (r.type === 'in') inn += r.amount; else out += r.amount;
+      }
+      K.money.save(list);
+      K.put('money.lastImport', { at: Date.now(), bank, n });
+      ym = to.slice(0, 7); tab = 'month'; render();
+      K.toast(`Imported ${n}: −${eur(out)} spent, +${eur(inn)} in`);
+    },
+  });
+  f.addEventListener('click', e => { const b = e.target.closest('[data-all]'); if (b) f.querySelectorAll('[data-row]').forEach(c => c.checked = b.dataset.all === '1'); });
+}
+
+/* ================= receipts ================= */
+let rq = '';
+function receiptsHtml() {
+  const all = K.receipts.all().sort((a, b) => (b.date || '') < (a.date || '') ? -1 : 1);
+  let html = `<div class="row-btns" style="margin-bottom:12px"><button class="btn sm primary" type="button" data-act="addReceipt">📄 Add file</button><button class="btn sm" type="button" data-act="photoReceipt">📷 Photo of a receipt</button><button class="btn sm" type="button" data-act="linkReceipt">🔗 Add a link</button></div>`;
+  if (!all.length) return html + `<div class="empty"><b>Keep your receipts here</b>Order confirmations, PDF invoices, photos of paper receipts or links to an online order. Handy for returns and warranty.<br><br>Tip: in Gmail or your Files app, tap <b>Share</b> on a PDF or screenshot and pick <b>Life Hub</b>.</div>`;
+  html += `<input class="search" id="rsearch" type="search" placeholder="Search receipts" value="${esc(rq)}" aria-label="Search receipts" style="margin-bottom:12px;background:var(--surface)">`;
+  const ql = rq.toLowerCase();
+  const list = all.filter(r => !ql || [r.shop, r.note, r.fileName, r.url].join(' ').toLowerCase().includes(ql));
+  const warranty = list.filter(r => r.warranty && r.warranty >= K.ymd());
+  if (warranty.length && !ql) html += `<div class="sec" style="margin-top:0">Still under warranty</div><div class="list">${warranty.map(rRow).join('')}</div><div class="sec">All receipts</div>`;
+  const by = {}; list.forEach(r => (by[(r.date || '').slice(0, 7)] = by[(r.date || '').slice(0, 7)] || []).push(r));
+  for (const m of Object.keys(by).sort().reverse()) { const [y, mo] = m.split('-').map(Number); html += `<div class="sec">${mo ? K.MONTHS[mo - 1] + ' ' + y : 'No date'}</div><div class="list">${by[m].map(rRow).join('')}</div>`; }
+  if (!list.length) html += `<div class="empty"><b>Nothing found</b></div>`;
+  html += `<p class="hint" id="rusage" style="margin-top:12px"></p>`;
+  return html;
+}
+function rRow(r) {
+  const icon = r.url && !r.fileId ? '🔗' : /pdf/i.test(r.type || '') ? '📄' : '🖼️';
+  return `<button class="item" type="button" data-rc="${r.id}" style="width:100%"><span class="rthumb" data-thumb="${r.fileId || ''}" style="width:42px;height:42px;border-radius:10px;background:var(--surface-2);display:grid;place-items:center;font-size:20px;flex:none;background-size:cover;background-position:center">${icon}</span>
+    <span class="body"><span class="title">${esc(r.shop || r.fileName || 'Receipt')}</span><span class="meta">${r.date ? `<span>${esc(K.fmtDay(r.date))}</span>` : ''}${r.txId && K.money.byId(r.txId) ? '<span>✓ linked to payment</span>' : ''}${r.warranty ? `<span class="${r.warranty >= K.ymd() ? 'soon' : ''}">warranty ${r.warranty >= K.ymd() ? 'until ' + K.fmtDate(r.warranty) : 'ended'}</span>` : ''}</span></span>
+    <span class="right num">${r.amount ? eur(r.amount) : ''}</span></button>`;
+}
+async function loadThumbs() {
+  for (const el of document.querySelectorAll('[data-thumb]')) { const id = el.dataset.thumb; if (!id) continue; const u = await K.files.thumb(id); if (u) { el.style.backgroundImage = `url(${u})`; el.textContent = ''; } }
+  const u = await K.files.usage(), el = K.$('#rusage');
+  if (el) { const n = K.receipts.all().length; el.textContent = `${K.plural(n, 'receipt')} saved on this phone${u && u.usage ? ` · Life Hub uses ${K.fmtSize(u.usage)}` : ''}. Receipts are in your backup file too.`; }
+}
+async function pickReceipt(txId, photo) {
+  const files = await pickFile('application/pdf,image/*', photo, !txId);
+  if (!files.length) return;
+  K.files.keep();
+  for (const file of files) {
+    const fileId = await K.files.put(file, file.name);
+    const r = { id: K.uid(), fileId, fileName: file.name, type: file.type, size: file.size, shop: guessShop(file.name), date: K.ymd(new Date(file.lastModified || Date.now())), amount: '', txId: txId || '', note: '', warranty: '' };
+    K.receipts.upsert(r);
+    if (files.length === 1) { editReceipt(r, null, true); }
+  }
+  if (files.length > 1) K.toast(`${files.length} receipts saved. Tap one to add details.`);
+  tab = tab === 'month' && txId ? 'month' : 'receipts'; render();
+}
+function guessShop(name) {
+  const n = String(name || '').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').replace(/\b(invoice|factuur|receipt|bon|order|bestelling|bevestiging|confirmation|screenshot|img|scan|pdf)\b/gi, '').replace(/\d{4,}/g, '').trim();
+  return n.length > 2 ? n.slice(0, 40) : '';
+}
+function editReceipt(r, preset, isNewFile) {
+  const isNew = !r;
+  r = r || Object.assign({ id: K.uid(), fileId: '', url: '', shop: '', date: K.ymd(), amount: '', txId: '', note: '', warranty: '' }, preset || {});
+  const near = K.money.all().filter(t => t.type !== 'in' && (!r.date || Math.abs(K.daysUntil(t.date) - K.daysUntil(r.date)) <= 30)).sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 60);
+  const txOpts = [['', '— Not linked —']].concat(near.map(t => [t.id, `${K.fmtDay(t.date)} · ${t.note || t.party || t.cat} · ${eur(t.amount)}`]));
+  if (r.txId && !near.some(t => t.id === r.txId)) { const t = K.money.byId(r.txId); if (t) txOpts.push([t.id, `${K.fmtDay(t.date)} · ${t.note || t.cat} · ${eur(t.amount)}`]); }
+  const f = K.form({
+    title: isNew ? (r.fileId ? 'New receipt' : 'Add a receipt link') : 'Receipt',
+    fields: [
+      ...(r.fileId ? [{ type: 'html', k: '_f', html: `<div class="row-btns" style="margin:-4px 0 12px"><button class="btn sm primary" type="button" data-ropen>Open ${/pdf/i.test(r.type || '') ? 'PDF' : 'file'}</button><button class="btn sm" type="button" data-rdl>Download</button><span class="small muted" style="align-self:center">${esc(r.fileName || '')}${r.size ? ' · ' + K.fmtSize(r.size) : ''}</span></div>` }] : []),
+      ...(!r.fileId ? [{ k: 'url', label: 'Link to the online receipt or order', type: 'url', value: r.url, placeholder: 'https://…', required: true }] : []),
+      ...(r.fileId && r.url ? [{ type: 'html', k: '_u', html: `<p class="small" style="margin:-6px 0 12px"><a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:var(--c)">Open the shared link</a></p>` }] : []),
+      { k: 'shop', label: 'Shop / what', value: r.shop, placeholder: 'e.g. Coolblue — headphones' },
+      { k: 'amount', label: 'Amount (€)', type: 'number', value: r.amount, half: true },
+      { k: 'date', label: 'Date', type: 'date', value: r.date, half: true },
+      { k: 'txId', label: 'Payment it belongs to', type: 'select', value: r.txId, options: txOpts },
+      { k: 'warranty', label: 'Warranty until (optional)', type: 'date', value: r.warranty, hint: 'Most things have 2 years. You’ll see it under “Still under warranty”.' },
+      { k: 'note', label: 'Note', value: r.note, placeholder: 'e.g. order number, return before …' },
+    ],
+    change(v, form) {
+      /* pick the matching payment automatically when the amount matches */
+      if (!form.elements.txId.value && v.amount) { const m = near.find(t => Math.abs(K.num(t.amount) - v.amount) < 0.01 && !K.receipts.all().some(x => x.txId === t.id && x.id !== r.id)); if (m) form.elements.txId.value = m.id; }
+    },
+    save(v) {
+      if (v.url && !/^https?:\/\//i.test(v.url)) v.url = 'https://' + v.url;
+      Object.assign(r, v); K.receipts.upsert(r); render();
+      if (v.txId && v.amount) { const t = K.money.byId(v.txId); if (t && Math.abs(K.num(t.amount) - v.amount) > 0.01) K.toast('Saved. Note: the amount differs from the payment.'); }
+    },
+    del: () => { if (!confirm('Delete this receipt for good?')) return false; if (r.fileId) K.files.del(r.fileId); K.receipts.remove(r.id); render(); if (isNew || isNewFile) K.toast('Receipt deleted'); },
+  });
+  f.addEventListener('click', e => { if (e.target.closest('[data-ropen]')) K.files.open(r.fileId); if (e.target.closest('[data-rdl]')) K.files.download(r.fileId); });
+}
+/* things shared to Life Hub from other apps (Android Share menu) wait in the inbox */
+async function checkInbox() {
+  let items = []; try { items = await K.files.inbox(); } catch { return; }
+  for (const it of items) {
+    await K.files.clearInbox(it.id);
+    const url = it.url || (String(it.text || '').match(/https?:\/\/\S+/) || [''])[0];
+    if (it.fileId) {
+      const f = await K.files.get(it.fileId);
+      const r = { id: K.uid(), fileId: it.fileId, fileName: f ? f.name : 'shared file', type: f ? f.type : '', size: f ? f.size : 0, url, shop: guessShop(it.title || (f && f.name)), date: K.ymd(), amount: '', txId: '', note: it.text && !url ? String(it.text).slice(0, 120) : '', warranty: '' };
+      K.receipts.upsert(r); tab = 'receipts'; render(); if (items.length === 1) editReceipt(r, null, true);
+    } else if (url) {
+      tab = 'receipts'; render(); editReceipt(null, { url, shop: (it.title || '').slice(0, 60) });
+    }
+  }
+  if (items.length > 1) K.toast(`${items.length} things shared to Life Hub. Tap them to add details.`);
+}
+
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
   if (d.tab) { tab = d.tab; history.replaceState(null, '', '#' + tab); render(); }
@@ -197,11 +391,19 @@ document.addEventListener('click', e => {
   else if (d.goal) editGoal(K.savings.byId(d.goal));
   else if (d.add) { const g = K.savings.byId(d.add); const v = K.num(prompt(`How much did you put aside for ${g.name}? (€)`) || 0); if (v) { g.saved = K.num(g.saved) + v; K.savings.upsert(g); render(); K.toast(g.saved >= K.num(g.target) ? `🎉 Goal reached: ${g.name}!` : `${eur(K.num(g.target) - g.saved)} to go`); } }
   else if (d.sub) editSub(K.subs.byId(d.sub));
-  else if (b.id === 'fab') ({ month: () => editTx(), budgets: () => editTx(), savings: () => editGoal(), subs: () => editSub() })[tab]();
+  else if (d.act === 'import') pickBankFile();
+  else if (d.act === 'addReceipt') pickReceipt();
+  else if (d.act === 'photoReceipt') pickReceipt('', true);
+  else if (d.act === 'linkReceipt') editReceipt(null, { url: '' });
+  else if (d.rc) editReceipt(K.receipts.byId(d.rc));
+  else if (b.id === 'fab') ({ month: () => editTx(), receipts: () => pickReceipt(), budgets: () => editTx(), savings: () => editGoal(), subs: () => editSub() })[tab]();
 });
+document.addEventListener('input', e => { if (e.target.id === 'rsearch') { rq = e.target.value; render(); const el = K.$('#rsearch'); el.focus(); el.setSelectionRange(rq.length, rq.length); } });
 document.addEventListener('submit', e => { if (e.target.id !== 'quick') return; e.preventDefault(); if (quickAdd(K.$('#q').value)) { render(); K.$('#q').focus(); } });
 K.$('#fab').innerHTML = svg('plus');
 render();
+checkInbox();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkInbox(); });
 </script>
 </body>
 </html>

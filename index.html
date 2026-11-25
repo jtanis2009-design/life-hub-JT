@@ -15,6 +15,7 @@
 <script src="hub.js"></script>
 <script src="lib/kit.js"></script>
 <script src="lib/agenda.js"></script>
+<script src="lib/files.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -667,13 +668,15 @@ $('#ntTest').onclick = () => K.showNotification('Life Hub test 🔔', 'This is h
 
 /* backup: every app's data on this website, minus logins and keys */
 const SKIP = /^(wl_auth|wl_aikey|wl_sync_|wl_mvundo|hub\.lock|hub\.unlocked|hub\.hiddenAt|hub\.fired)/;
-$('#bkSave').onclick = () => {
+$('#bkSave').onclick = async () => {
   const data = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
     if (/^(wl_|traveler\.|hub\.)/.test(k) && !SKIP.test(k)) data[k] = localStorage.getItem(k);
   }
-  const file = { app: 'life-hub', version: 1, savedAt: new Date().toISOString(), data };
+  let files = [];
+  try { files = await K.files.exportAll(); } catch {}   /* receipts (PDFs, photos) */
+  const file = { app: 'life-hub', version: 2, savedAt: new Date().toISOString(), data, files };
   const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
   const a = document.createElement('a'); a.href = url; a.download = `life-hub-backup-${ymd()}.json`; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
@@ -686,8 +689,9 @@ $('#bkFile').onchange = async e => {
     const file = JSON.parse(await f.text());
     if (file.app !== 'life-hub' || !file.data) throw new Error('not a Life Hub backup');
     const n = Object.keys(file.data).length;
-    if (!confirm(`Restore ${n} saved items from ${new Date(file.savedAt).toLocaleString('en-GB')}?\nThis replaces the same data on this phone.`)) return;
+    if (!confirm(`Restore ${n} saved items${file.files && file.files.length ? ` and ${file.files.length} receipts` : ''} from ${new Date(file.savedAt).toLocaleString('en-GB')}?\nThis replaces the same data on this phone.`)) return;
     for (const [k, v] of Object.entries(file.data)) if (/^(wl_|traveler\.|hub\.)/.test(k) && !SKIP.test(k)) localStorage.setItem(k, v);
+    if (file.files && file.files.length) await K.files.importAll(file.files);
     toast('Restored. Reloading…'); setTimeout(() => location.reload(), 900);
   } catch (err) { toast('That file isn’t a Life Hub backup.'); }
 };

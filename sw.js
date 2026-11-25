@@ -1,9 +1,9 @@
 /* Life Hub offline cache for every module (travel/, workout/, ...).
    Network first so a new version shows up right away; the saved copy is used when offline or on a weak signal.
    Live data (bus times, weather, AI, cloud sync) is never cached here: other sites go straight to the network. */
-var CACHE = 'life-hub-v3';
+var CACHE = 'life-hub-v4';
 var SHELL = ['./', 'index.html', 'hub.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
-  'lib/kit.css', 'lib/kit.js', 'lib/agenda.js',
+  'lib/kit.css', 'lib/kit.js', 'lib/agenda.js', 'lib/files.js', 'lib/bankimport.js',
   'travel/', 'travel/map.js', 'travel/icons/icon.svg', 'workout/', 'workout/icon-192.png',
   'todo/', 'school/', 'calendar/', 'habits/', 'countdowns/', 'sleep/', 'shopping/', 'notes/', 'money/'];
 self.addEventListener('install', function (e) {
@@ -18,6 +18,13 @@ self.addEventListener('activate', function (e) {
 });
 self.addEventListener('fetch', function (e) {
   var req = e.request, url = new URL(req.url);
+  /* something shared to Life Hub from another app (Android Share menu): keep it for the Money page */
+  if (req.method === 'POST' && url.origin === self.location.origin && url.searchParams.has('share-target')) {
+    e.respondWith(saveShared(req).catch(function () {}).then(function () {
+      return Response.redirect(new URL('money/#receipts', self.registration.scope).href, 303);
+    }));
+    return;
+  }
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
   e.respondWith(new Promise(function (resolve) {
     var done = false;
@@ -52,3 +59,36 @@ self.addEventListener('notificationclick', function (e) {
     return self.clients.openWindow(url);
   }));
 });
+
+/* same database layout as lib/files.js */
+function idb() {
+  return new Promise(function (res, rej) {
+    var r = indexedDB.open('lifehub', 1);
+    r.onupgradeneeded = function () {
+      var d = r.result;
+      if (!d.objectStoreNames.contains('files')) d.createObjectStore('files', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('inbox')) d.createObjectStore('inbox', { keyPath: 'id' });
+    };
+    r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); };
+  });
+}
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function saveShared(req) {
+  return req.formData().then(function (form) {
+    var files = form.getAll('files').filter(function (f) { return f && f.size; });
+    var title = form.get('title') || '', text = form.get('text') || '', link = form.get('url') || '';
+    return idb().then(function (d) {
+      return new Promise(function (res, rej) {
+        var t = d.transaction(['files', 'inbox'], 'readwrite');
+        var fs = t.objectStore('files'), inbox = t.objectStore('inbox');
+        if (files.length) files.forEach(function (f) {
+          var id = uid();
+          fs.put({ id: id, blob: f, name: f.name || 'shared', type: f.type || '', size: f.size, at: Date.now() });
+          inbox.put({ id: uid(), fileId: id, title: title, text: text, url: link, at: Date.now() });
+        });
+        else if (link || text) inbox.put({ id: uid(), title: title, text: text, url: link, at: Date.now() });
+        t.oncomplete = res; t.onerror = function () { rej(t.error); };
+      });
+    });
+  });
+}
