@@ -326,8 +326,9 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
         <li>Tap <b>Create API key</b> and copy it (it starts with <b>AIza</b> or <b>AQ.</b>).</li>
         <li>Paste it here and tap <b>Save</b>.</li></ol>
       <div style="display:flex;gap:8px"><input id="aiKey" type="password" autocomplete="off" placeholder="Paste your key (AIza… or AQ.…)" aria-label="Gemini API key" style="flex:1;min-width:0"><button class="btn primary" id="aiSave" type="button">Save</button></div>
-      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn" id="aiTest" type="button">Test</button><button class="btn danger" id="aiDel" type="button" hidden>Remove key</button></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn" id="aiTest" type="button">Test</button><button class="btn" id="aiCheck" type="button">🩺 AI check</button><button class="btn danger" id="aiDel" type="button" hidden>Remove key</button></div>
       <p class="small" id="ai-msg" style="margin:8px 0 0"></p>
+      <pre id="ai-check" class="small" hidden style="white-space:pre-wrap;word-break:break-word;background:var(--surface-2);border-radius:12px;padding:10px 12px;margin:8px 0 0;font-size:12px;line-height:1.5"></pre>
     </div>
     <p class="note">The key is free for personal use. It’s saved on your devices and in your own cloud, and only sent to Google’s Gemini.</p>
 
@@ -953,6 +954,11 @@ $('#aiSave').onclick = () => {
   try { localStorage.setItem('wl_aikey', k); localStorage.removeItem('wl_aimodel'); } catch {}
   set('hub.aikey', k); try { localStorage.setItem('hub.changedAt', String(Date.now())); document.dispatchEvent(new CustomEvent('hub:change', { detail: 'aikey' })); } catch {}
   $('#aiKey').value = ''; $('#ai-msg').style.color = 'var(--good)'; $('#ai-msg').textContent = 'Saved. Tap Test to check it works.'; drawAI(); drawSetup();
+};
+$('#aiCheck').onclick = async () => {
+  const box = $('#ai-check'); box.hidden = false; box.textContent = 'Running the AI check… (can take up to a few minutes)\n';
+  try { if (!K.aiCheck) await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'lib/ai.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+    await K.aiCheck(line => { box.textContent += line + '\n'; }); box.textContent += '\n📸 Screenshot this for Claude.'; } catch (e) { box.textContent += 'Check failed: ' + e.message; }
 };
 $('#aiTest').onclick = async () => {
   $('#ai-msg').style.color = 'var(--muted)'; $('#ai-msg').textContent = 'Testing…';
