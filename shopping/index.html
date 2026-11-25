@@ -13,7 +13,7 @@
 <style>
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -4px 0 12px; }
   .chips button { padding: 6px 11px; border-radius: 999px; background: var(--surface); border: 1px dashed var(--line); font-size: 13px; font-weight: 600; color: var(--muted); }
-  .qty { font-weight: 800; color: var(--c); margin-right: 4px; }
+  .qty { font-weight: 800; color: var(--ct); margin-right: 4px; }
   .wish .price { font-weight: 800; font-size: 16px; }
   .wish .progress { margin-top: 7px; }
 </style>
@@ -99,7 +99,7 @@ function wishlist(w) {
       <span class="title">${'⭐'.repeat(x.prio || 0)}${x.prio ? ' ' : ''}${esc(x.name)}</span>
       <span class="meta">${x.price ? `<span>${K.eur(x.saved || 0)} of ${K.eur(x.price)} saved</span>` : '<span>No price yet</span>'}${x.link ? '<span>🔗 link</span>' : ''}</span>
       ${x.price ? `<div class="progress"><i style="width:${pct}%"></i></div>` : ''}</button>
-      <span class="right"><span class="price num">${x.price ? K.eur(x.price) : ''}</span>${x.link ? `<br><a class="small" href="${esc(x.link)}" target="_blank" rel="noopener" style="color:var(--c)">Open</a>` : ''}</span></div>`;
+      <span class="right"><span class="price num">${x.price ? K.eur(x.price) : ''}</span>${x.link ? `<br><a class="small" href="${esc(x.link)}" target="_blank" rel="noopener" style="color:var(--ct)">Open</a>` : ''}</span></div>`;
   }).join('')}</div>`;
   if (got.length) html += `<div class="sec">Bought</div><div class="list">${got.map(x => `<button class="item done" type="button" data-wish="${x.id}" style="width:100%"><span class="body title">${esc(x.name)}</span><span class="right num muted">${x.price ? K.eur(x.price) : ''}</span></button>`).join('')}</div>`;
   return html;

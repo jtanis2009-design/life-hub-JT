@@ -767,7 +767,7 @@ async function pushToggle() {
     if (s && b64u(s.options.applicationServerKey || new ArrayBuffer(0)) !== cfg.pub) { await s.unsubscribe(); s = null; }
     if (!s) s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64u(cfg.pub) });
     const id = 'dev_' + (await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s.endpoint)).then(b => b64u(b).slice(0, 20)));
-    const w2 = await fetch(F + id, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { j: { stringValue: JSON.stringify(Object.assign(s.toJSON(), { device: navigator.userAgent.slice(0, 80), at: new Date().toISOString() })) } } }) });
+    const w2 = await fetch(F + id, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { j: { stringValue: JSON.stringify(Object.assign(s.toJSON(), { device: navigator.userAgent.slice(0, 80), site: Hub.root, at: new Date().toISOString() })) } } }) });
     if (!w2.ok) throw new Error('Couldn’t save to your cloud (' + w2.status + ').');
     set('lh.push', { on: true, id }); toast('On ✓ Make sure the “Reminders” job is in your life-hub-bank repo.');
   } catch (e) { toast(e.message || 'Couldn’t turn it on'); }

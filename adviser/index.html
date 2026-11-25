@@ -112,7 +112,7 @@ function render() {
   const a = analyse();
   let html = K.header('Money Coach', 'coach') + `<div class="tabs"><button type="button" data-tab="overview" aria-pressed="${tab === 'overview'}">Overview & tips</button><button type="button" data-tab="ask" aria-pressed="${tab === 'ask'}">Ask the coach</button></div>`;
   if (a.tx.length < 10) {
-    html += `<div class="empty"><b>Not enough money data yet</b>Import your bank statement in <a href="../money/" style="color:var(--c)">Money</a> (🏦 Import from bank). The coach needs a few months of payments to give good tips.</div>`;
+    html += `<div class="empty"><b>Not enough money data yet</b>Import your bank statement in <a href="../money/" style="color:var(--ct)">Money</a> (🏦 Import from bank). The coach needs a few months of payments to give good tips.</div>`;
     K.$('#app').innerHTML = html; return;
   }
   html += tab === 'ask' ? askHtml(a) : overviewHtml(a);
@@ -164,7 +164,7 @@ Their money data:
 `;
 function askHtml(a) {
   let html = '';
-  if (!K.aiReady()) html += `<div class="card"><div class="k">AI not set up</div><p class="muted small" style="margin:6px 0 0">The coach uses the same free Gemini key as your Workout coach. Add it in <a href="../workout/" style="color:var(--c)">Workout</a> → You → AI coach. The tips on the Overview tab work without it.</p></div>`;
+  if (!K.aiReady()) html += `<div class="card"><div class="k">AI not set up</div><p class="muted small" style="margin:6px 0 0">The coach uses the same free Gemini key as your Workout coach. Add it in <a href="../workout/" style="color:var(--ct)">Workout</a> → You → AI coach. The tips on the Overview tab work without it.</p></div>`;
   html += `<div class="chat">${chat.length ? chat.map(m => `<div class="msg ${m.role === 'user' ? 'me' : 'ai'}">${m.role === 'user' ? esc(m.content) : K.md(m.content)}</div>`).join('') : `<div class="msg ai">Hi! I can see a summary of your money: totals per month and category, your top places and goals. Not your separate payments. What do you want to know?</div>`}<div id="chatEnd"></div></div>`;
   html += `<div class="chips">${['How can I save €50 a month?', 'Am I spending too much on food?', 'Make me a monthly budget', 'How long until I can buy my wishlist?', 'What changed this month?'].map(q => `<button type="button" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
     <form class="quick" id="ask" autocomplete="off"><input id="q" placeholder="Ask about your money…" aria-label="Ask the coach"><button class="btn primary" type="submit">Ask</button></form>

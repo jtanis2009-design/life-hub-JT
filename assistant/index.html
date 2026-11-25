@@ -182,7 +182,7 @@ Answer short and friendly (usually 1-4 sentences or a short list). Answer in Dut
 function render() {
   const has = chat.length || pending;
   let html = K.header('Assistant', 'ai', chat.length ? `<button class="iconbtn" type="button" data-act="clear" aria-label="New chat">🗑️</button>` : '');
-  if (!K.aiReady()) html += `<div class="card"><div class="k">Set up the AI</div><p class="small muted" style="margin:6px 0 0">The assistant uses your free Gemini key from the Workout app: <a href="../workout/" style="color:var(--c)">Workout</a> → You → AI coach. Until then you can still type <b>“remind me …”</b> or <b>“add …”</b> to make a to-do.</p></div>`;
+  if (!K.aiReady()) html += `<div class="card"><div class="k">Set up the AI</div><p class="small muted" style="margin:6px 0 0">The assistant uses your free Gemini key from the Workout app: <a href="../workout/" style="color:var(--ct)">Workout</a> → You → AI coach. Until then you can still type <b>“remind me …”</b> or <b>“add …”</b> to make a to-do.</p></div>`;
   html += `<div class="chat" id="chat">`;
   if (!has) html += `<div class="msg ai">Hi! I can see your whole Life Hub: school, to-dos, calendar, habits, money, sleep, anime and more. Ask me something, or tell me what to add.</div>
     <div class="sugg">${['What do I have tomorrow?', 'Remind me to bring my gym bag tomorrow at 7', 'How much did I spend on food this week?', 'What tests do I have coming up?', 'Add milk and eggs to the shopping list', 'How are my habits going?'].map(s => `<button type="button" data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;

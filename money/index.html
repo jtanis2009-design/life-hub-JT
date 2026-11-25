@@ -454,7 +454,7 @@ function editReceipt(r, preset, isNewFile) {
     fields: [
       ...(r.fileId ? [{ type: 'html', k: '_f', html: `<div class="row-btns" style="margin:-4px 0 12px"><button class="btn sm primary" type="button" data-ropen>Open ${/pdf/i.test(r.type || '') ? 'PDF' : 'file'}</button><button class="btn sm" type="button" data-rdl>Download</button><span class="small muted" style="align-self:center">${esc(r.fileName || '')}${r.size ? ' · ' + K.fmtSize(r.size) : ''}</span></div>` }] : []),
       ...(!r.fileId ? [{ k: 'url', label: 'Link to the online receipt or order', type: 'url', value: r.url, placeholder: 'https://…', required: true }] : []),
-      ...(r.fileId && r.url ? [{ type: 'html', k: '_u', html: `<p class="small" style="margin:-6px 0 12px"><a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:var(--c)">Open the shared link</a></p>` }] : []),
+      ...(r.fileId && r.url ? [{ type: 'html', k: '_u', html: `<p class="small" style="margin:-6px 0 12px"><a href="${esc(r.url)}" target="_blank" rel="noopener" style="color:var(--ct)">Open the shared link</a></p>` }] : []),
       { k: 'shop', label: 'Shop / what', value: r.shop, placeholder: 'e.g. Coolblue — headphones' },
       { k: 'amount', label: 'Amount (€)', type: 'number', value: r.amount, half: true },
       { k: 'date', label: 'Date', type: 'date', value: r.date, half: true },

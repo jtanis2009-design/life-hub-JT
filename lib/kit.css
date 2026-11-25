@@ -34,6 +34,10 @@ body {
 a { color: inherit; }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 [hidden] { display: none !important; }
+/* text in the app's colour: the colour itself on dark, a darker shade on light backgrounds */
+body, [style*="--c:"] { --ct: var(--c); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) body, :root:not([data-theme="dark"]) [style*="--c:"] { --ct: color-mix(in srgb, var(--c) 58%, #000); } }
+:root[data-theme="light"] body, :root[data-theme="light"] [style*="--c:"] { --ct: color-mix(in srgb, var(--c) 58%, #000); }
 .wrap { max-width: 640px; margin: 0 auto; padding: 0 16px; }
 .num { font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
@@ -60,7 +64,7 @@ header.top h1 .ic svg { width: 19px; height: 19px; }
 .card .k { font-size: 11.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .card .big { font-size: 20px; font-weight: 800; letter-spacing: -.01em; margin-top: 4px; }
 .sec { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 700; color: var(--muted); margin: 20px 2px 8px; }
-.sec .act { margin-left: auto; color: var(--c); font-weight: 700; font-size: 13px; }
+.sec .act { margin-left: auto; color: var(--ct); font-weight: 700; font-size: 13px; }
 .list { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; margin-bottom: 12px; }
 .item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); min-height: 54px; }
 .item:first-child { border-top: 0; }

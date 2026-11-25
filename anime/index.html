@@ -18,7 +18,7 @@
   .ani .t { font-weight: 700; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .ani .m { font-size: 12.5px; color: var(--muted); }
   .ani .progress { margin-top: auto; height: 6px; }
-  .plus { flex: none; align-self: center; min-width: 54px; height: 54px; border-radius: 16px; background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); font-weight: 800; font-size: 15px; display: grid; place-items: center; line-height: 1.1; }
+  .plus { flex: none; align-self: center; min-width: 54px; height: 54px; border-radius: 16px; background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--ct); font-weight: 800; font-size: 15px; display: grid; place-items: center; line-height: 1.1; }
   .plus small { display: block; font-size: 10px; font-weight: 700; opacity: .8; }
   .today-badge { display: inline-block; font-size: 10.5px; font-weight: 800; color: #0d0f14; background: var(--c); border-radius: 6px; padding: 1px 6px; margin-right: 4px; }
   .res { display: flex; gap: 12px; padding: 10px 4px; border-top: 1px solid var(--line); width: 100%; text-align: left; align-items: center; }
@@ -203,11 +203,11 @@ function searchSheet() {
       const res = await searchAnime(p.term);
       if (input.value.trim() !== q) return null;            /* you typed more meanwhile: a newer search is coming */
       f._res = res; f._lastQ = q;
-      box.innerHTML = (p.all && res.length ? `<p class="small" style="color:var(--c);margin:0 2px 6px;font-weight:700">Tap the right one to add it as fully watched (Enter = the top one).</p>` : '')
+      box.innerHTML = (p.all && res.length ? `<p class="small" style="color:var(--ct);margin:0 2px 6px;font-weight:700">Tap the right one to add it as fully watched (Enter = the top one).</p>` : '')
         + (res.length ? `<div>${res.map((a, i) => { const on = A.all().find(x => same(x, a));
           return `<div style="display:flex;align-items:center;gap:6px;border-top:1px solid var(--line)"><button class="res" type="button" data-pick="${i}" style="border:0;flex:1;min-width:0"><span class="cover" style="${a.image ? `background-image:url('${esc(a.image)}')` : ''}"></span>
           <span style="flex:1;min-width:0"><b style="display:block">${esc(a.title)}</b><span class="small muted">${[a.type, a.year, a.eps ? a.eps + ' eps' : a.airing ? (a.nextEp ? `airing · ${a.nextEp - 1} out` : 'airing') : '', a.malScore ? '★ ' + a.malScore : ''].filter(Boolean).join(' · ')}</span>
-          ${on ? `<span class="small" style="color:var(--c);display:block">On your list${on.status === 'done' ? ' · completed' : ''}</span>` : ''}</span></button>
+          ${on ? `<span class="small" style="color:var(--ct);display:block">On your list${on.status === 'done' ? ' · completed' : ''}</span>` : ''}</span></button>
           <button class="btn sm" type="button" data-allpick="${i}" style="flex:none" aria-label="Add ${esc(a.title)} as fully watched">✓ All watched</button></div>`; }).join('')}</div>`
         : `<p class="muted small">Nothing found. Tap “Add without search” to add it yourself.</p>`);
       return res;

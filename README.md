@@ -24,6 +24,7 @@ My all-in-one everyday app. One icon on my phone for travel, workouts and (soon)
 - **Music** (`music/`): now playing, minutes listened, top 5 songs this week with play counts and top artists, through Last.fm (free) or Spotify directly (needs Premium).
 - **Clothes** (`clothes/`): wardrobe with photos, daily outfit log, outfit suggestions from the weather, laundry, cost per wear, forgotten clothes.
 - **Shaving** (`shaving/`): days since and next shave per area, blade use, spare blades to the shopping list, skin tips, reminders.
+- **Bottom bar and shortcuts**: one bar on every page (Today, three apps you pick, Apps for everything else) and long-press shortcuts to Assistant, To-do, Travel and Workout.
 - **Privacy lock**: a PIN for the whole app, with an extra lock on Notes and Money.
 - **Backup**: one file with everything, restore it any time. Logins and the AI key are left out.
 - **Reminders**: phone notifications for to-dos, homework, tests, events, birthdays, habits, bedtime and subscriptions while Life Hub is open or in the background.
