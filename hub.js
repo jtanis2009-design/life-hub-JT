@@ -91,27 +91,98 @@
     else if (needsLock()) showLock();
   });
 
-  function addHome() {
-    if (!me || !me.dataset.home) return;
-    var mode = me.dataset.home;
-    var a = document.createElement('a');
-    a.href = ROOT; a.className = 'hub-home ' + mode; a.setAttribute('aria-label', 'Life Hub home'); a.title = 'Life Hub home';
-    a.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/></svg>';
-    if (mode === 'brand') {
-      var brand = document.querySelector('.brand');
-      if (brand) { brand.insertBefore(a, brand.firstChild); return; }
-      a.className = 'hub-home fixed';
-    }
-    document.body.appendChild(a);
-    /* keep the workout header text clear of the round button */
-    var s = document.createElement('style'); s.textContent = 'header{padding-right:48px}'; document.head.appendChild(s);
+  /* ---------- the Life Hub bar at the bottom of every page ----------
+     Today · three apps you pick · Apps (all apps in one tap). */
+  var APPS = [
+    ['home', 'Today', '', '#8b7cff', '<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/>'],
+    ['travel', 'Travel', 'travel/', '#5db3e4', '<path d="M6 17V7a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v10M6 13h12M8.5 20.5l1-3M15.5 20.5l-1-3"/>'],
+    ['workout', 'Workout', 'workout/', '#ff5a5a', '<path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/>'],
+    ['ai', 'Assistant', 'assistant/', '#b48cff', '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM18.5 15l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/>'],
+    ['todo', 'To-do', 'todo/', '#8b7cff', '<path d="M9 11l2.5 2.5L16 9"/><rect x="4" y="4" width="16" height="16" rx="4"/>'],
+    ['school', 'School', 'school/', '#f2994a', '<path d="M2.5 9 12 4.5 21.5 9 12 13.5z"/><path d="M6.5 11v5c0 1.5 2.5 3 5.5 3s5.5-1.5 5.5-3v-5"/>'],
+    ['calendar', 'Calendar', 'calendar/', '#56ccf2', '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>'],
+    ['money', 'Money', 'money/', '#3ecf9a', '<rect x="3" y="6" width="18" height="13" rx="3"/><path d="M3 10.5h18M7 15h3"/>'],
+    ['habits', 'Habits', 'habits/', '#f25f8a', '<path d="M12 3c2.5 3 5 5.4 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5.3 1.6 1 2.5 2 3 0-2.5.2-5 1-7.5z"/>'],
+    ['sleep', 'Sleep', 'sleep/', '#9b8cff', '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'],
+    ['alarm', 'Alarms', 'alarm/', '#9b8cff', '<circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.5 1.5M4 4.5l3-2.5M20 4.5l-3-2.5"/>'],
+    ['shopping', 'Shopping', 'shopping/', '#6fdc8c', '<path d="M5 7h14l-1.3 10.2a2 2 0 0 1-2 1.8H8.3a2 2 0 0 1-2-1.8z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/>'],
+    ['notes', 'Notes', 'notes/', '#c9b37e', '<path d="M6 3.5h9l4 4V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20z"/><path d="M14.5 3.5V8h4.5M9 12h6M9 16h6"/>'],
+    ['countdown', 'Countdowns', 'countdowns/', '#ffcf5c', '<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 2.5h5"/>'],
+    ['music', 'Music', 'music/', '#1ed760', '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>'],
+    ['anime', 'Anime', 'anime/', '#ff7eb6', '<rect x="3" y="5" width="18" height="13" rx="3"/><path d="M8 21h8M10.5 9.5v5l4-2.5z"/>'],
+    ['coach', 'Money Coach', 'adviser/', '#3ecf9a', '<path d="M4 19V9M9.5 19V5M15 19v-7M20.5 19V8"/><path d="M3 21h19"/>'],
+    ['clothes', 'Clothes', 'clothes/', '#b48cff', '<path d="M8 3l4 2.5L16 3l5 3.5-2.5 4L16 9v12H8V9l-2.5 1.5L3 6.5z"/>'],
+    ['shave', 'Shaving', 'shaving/', '#56ccf2', '<path d="M7 3h10v5H7z"/><path d="M12 8v13M9 21h6"/><path d="M7 5.5h10"/>'],
+  ];
+  var GRID = '<path d="M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.5H20V20h-6.5z"/>';
+  function app(id) { for (var i = 0; i < APPS.length; i++) if (APPS[i][0] === id) return APPS[i]; return null; }
+  function pins() { var p = lsGet('hub.navpins', null); p = Array.isArray(p) ? p.filter(function (x) { return app(x) && x !== 'home'; }).slice(0, 3) : []; ['travel', 'workout', 'ai', 'todo'].forEach(function (d) { if (p.length < 3 && p.indexOf(d) < 0) p.push(d); }); return p; }
+  function currentApp() {
+    var rest = location.href.indexOf(ROOT) === 0 ? location.href.slice(ROOT.length).split(/[?#]/)[0] : '';
+    var folder = rest.split('/')[0];
+    if (!folder || folder === 'index.html') return 'home';
+    for (var i = 0; i < APPS.length; i++) if (APPS[i][2] === folder + '/') return APPS[i][0];
+    return '';
+  }
+  function icon(paths) { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>'; }
+  function escH(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+  var NAV_CSS =
+    ':root{--hubnav-h:calc(58px + env(safe-area-inset-bottom));--hn-bg:#0d0f14;--hn-line:#272c3a;--hn-ink:#eef0f5;--hn-mut:#8a90a0;--hn-card:#161922;--hn-acc:#8b7cff}' +
+    '@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--hn-bg:#f3f4f8;--hn-line:#dfe2ea;--hn-ink:#121520;--hn-mut:#5d6475;--hn-card:#fff;--hn-acc:#5b47e0}}' +
+    ':root[data-theme="light"]{--hn-bg:#f3f4f8;--hn-line:#dfe2ea;--hn-ink:#121520;--hn-mut:#5d6475;--hn-card:#fff;--hn-acc:#5b47e0}' +
+    'nav.hub-nav{position:fixed!important;left:0;right:0;bottom:0!important;top:auto!important;z-index:45;background:color-mix(in srgb,var(--hn-bg) 93%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--hn-line);padding:0 0 env(safe-area-inset-bottom)!important;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}' +
+    '.hub-nav .in{max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);padding:5px 6px}' +
+    'nav.hub-nav a,nav.hub-nav button{padding:0;margin:0;letter-spacing:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:48px;border-radius:12px;text-decoration:none;font-size:10.5px!important;font-weight:700;line-height:1.1;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-transform:none;color:var(--hn-mut);background:none;border:0;cursor:pointer;-webkit-tap-highlight-color:transparent;min-width:0}' +
+    '.hub-nav a span,.hub-nav button span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 2px}' +
+    '.hub-nav svg{width:22px;height:22px}' +
+    '.hub-nav [aria-current="page"]{color:var(--c-app,var(--hn-acc));background:color-mix(in srgb,var(--c-app,var(--hn-acc)) 12%,transparent)}' +
+    '.hub-apps{position:fixed;inset:0;z-index:79;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}' +
+    '.hub-apps .sh{background:var(--hn-card);color:var(--hn-ink);width:100%;max-width:640px;border-radius:22px 22px 0 0;padding:10px 14px calc(var(--hubnav-h) + 10px);max-height:80vh;overflow-y:auto;font-family:Inter,system-ui,sans-serif;animation:hubup .18s ease-out}' +
+    '@keyframes hubup{from{transform:translateY(30px);opacity:.5}}' +
+    '.hub-apps .grab{width:40px;height:5px;border-radius:9px;background:var(--hn-line);margin:2px auto 12px}' +
+    '.hub-apps .g{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}' +
+    '.hub-apps a{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 2px;border-radius:14px;text-decoration:none;color:var(--hn-ink);font-size:12px;font-weight:600;line-height:1.2;font-family:inherit;text-align:center}' +
+    '.hub-apps a:active{background:var(--hn-line)}' +
+    '.hub-apps a i{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:color-mix(in srgb,var(--ac) 18%,transparent);color:var(--ac)}' +
+    '.hub-apps a i svg{width:24px;height:24px}' +
+    '.hub-apps .ed{display:block;text-align:center;margin-top:10px;font-size:13px;font-weight:700;font-family:inherit;color:var(--hn-acc);text-decoration:none}';
+  /* page-specific room for the bar */
+  var PAGE_CSS = {
+    workout: 'body{padding-bottom:calc(78px + var(--hubnav-h))!important}nav:not(.hub-nav){bottom:var(--hubnav-h)!important;padding-bottom:0!important}.rest{bottom:calc(72px + var(--hubnav-h))!important}.toast{bottom:calc(94px + var(--hubnav-h))!important}',
+    travel: 'body{padding-bottom:calc(16px + var(--hubnav-h))!important}body.map-mode{padding-bottom:var(--hubnav-h)!important}',
+  };
+
+  function addNav() {
+    if (document.querySelector('.hub-nav')) return;
+    var cur = currentApp(), here = app(cur);
+    var st = document.createElement('style'); st.textContent = NAV_CSS + (PAGE_CSS[me && me.dataset.nav] || ''); document.head.appendChild(st);
+    var items = ['home'].concat(pins());
+    var nav = document.createElement('nav'); nav.className = 'hub-nav'; nav.setAttribute('aria-label', 'Life Hub');
+    nav.innerHTML = '<div class="in">' + items.map(function (id) { var a = app(id);
+      return '<a href="' + ROOT + a[2] + '"' + (id === cur ? ' aria-current="page"' : '') + ' style="--c-app:' + a[3] + '">' + icon(a[4]) + '<span>' + escH(a[1]) + '</span></a>'; }).join('') +
+      '<button type="button" data-hub-apps' + (cur && items.indexOf(cur) < 0 ? ' aria-current="page" style="--c-app:' + here[3] + '"' : '') + '>' + icon(cur && items.indexOf(cur) < 0 ? here[4] : GRID) + '<span>' + (cur && items.indexOf(cur) < 0 ? escH(here[1]) : 'Apps') + '</span></button></div>';
+    document.body.appendChild(nav);
+    nav.querySelector('[data-hub-apps]').addEventListener('click', openApps);
+  }
+  function openApps() {
+    var bg = document.createElement('div'); bg.className = 'hub-apps';
+    bg.innerHTML = '<div class="sh" role="dialog" aria-label="All apps"><div class="grab"></div><div class="g">' + APPS.map(function (a) {
+      return '<a href="' + ROOT + a[2] + '" style="--ac:' + a[3] + '"><i>' + icon(a[4]) + '</i>' + escH(a[1]) + '</a>'; }).join('') +
+      '</div><a class="ed" href="' + ROOT + '#settings">Change the bottom bar</a></div>';
+    bg.addEventListener('click', function (e) { if (e.target === bg) bg.remove(); });
+    document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { bg.remove(); document.removeEventListener('keydown', esc); } });
+    document.body.appendChild(bg);
   }
 
-  function ready() { addHome(); if (needsLock()) showLock(); }
+  function ready() { addNav(); if (needsLock()) showLock(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready); else ready();
 
   window.Hub = {
     root: ROOT,
+    apps: APPS.map(function (a) { return { id: a[0], name: a[1], path: a[2] }; }),
+    pins: pins,
+    setPins: function (p) { lsSet('hub.navpins', p); try { localStorage.setItem('hub.changedAt', String(Date.now())); } catch (e) {} document.dispatchEvent(new CustomEvent('hub:change', { detail: 'navpins' })); },
     hasPin: function () { var c = lockCfg(); return !!(c && c.hash); },
     lockPrivate: function (v) { if (v != null) lsSet('hub.lockPrivate', !!v); return lsGet('hub.lockPrivate', true); },
     lockAfter: function () { var c = lockCfg(); return c && c.after != null ? c.after : 60; },
