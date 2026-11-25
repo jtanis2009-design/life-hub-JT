@@ -31,16 +31,20 @@
 <button class="fab" id="fab" type="button" aria-label="Add"></button>
 <script src="../lib/kit.js"></script>
 <script src="../lib/agenda.js"></script>
+<script src="../lib/ics.js"></script>
+<script src="../lib/ai.js"></script>
 <script>
 const { esc, svg } = K;
 const TABS = [['week', 'Timetable'], ['homework', 'Homework'], ['grades', 'Grades'], ['settings', 'Setup']];
 let tab = TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : 'week';
 let day = (() => { const d = new Date().getDay(); return d === 0 || d === 6 ? 1 : d; })();
 let showDone = false;
+let week = 0, selDate = K.ymd();   /* imported timetable: which week and day you look at */
 
 function subjects() {
   const s = new Set(K.school().subjects.map(x => x.name));
   K.school().lessons.forEach(l => l.subject && s.add(l.subject));
+  ((K.feed() || {}).lessons || []).forEach(l => l.subject && s.add(l.subject));
   K.homework.all().forEach(h => h.subject && s.add(h.subject));
   K.grades.all().forEach(g => g.subject && s.add(g.subject));
   return [...s].sort((a, b) => a.localeCompare(b));
@@ -73,6 +77,8 @@ function weekHtml() {
   }
   const hol = K.isHoliday(today);
   if (hol) html += `<div class="card"><div class="k">Holiday</div><div class="big">🌴 ${esc(hol.name || 'School holiday')}</div><div class="muted">Until ${esc(K.fmtDay(hol.to || hol.from, true))}</div></div>`;
+  if (K.feed() && (K.feedCovers(today) || K.feedCovers(K.addDays(today, 7)))) return html + feedWeekHtml();
+  html += `<div class="row-btns" style="margin:-2px 0 12px"><button class="btn sm" type="button" data-act="import">📥 Import timetable</button></div>`;
   html += `<div class="tabs">${[1, 2, 3, 4, 5, 6, 0].filter(d => d >= 1 && d <= 5 || sc.lessons.some(l => +l.day === d)).map(d => `<button type="button" data-day="${d}" aria-pressed="${day === d}">${K.DAYS_SHORT[d]}<span class="n">${sc.lessons.filter(l => +l.day === d).length || ''}</span></button>`).join('')}</div>`;
   const ls = sc.lessons.filter(l => +l.day === day).sort((a, b) => a.start < b.start ? -1 : 1);
   if (!sc.lessons.length) return html + `<div class="empty"><b>Add your timetable</b>Tap + to add your first lesson. It repeats every week.<br><br><button class="btn primary" data-act="addLesson" type="button">Add a lesson</button></div>`;
@@ -90,6 +96,121 @@ function weekHtml() {
   html += `<p class="hint" style="margin-top:6px">${K.DAYS[day]}: ${first.start} to ${last.end} · ${K.plural(ls.length, 'lesson')}. Tap a lesson to change it.</p>`;
   return html;
 }
+/* imported timetable: real dates, other weeks, cancelled lessons */
+function feedWeekHtml() {
+  const f = K.feed(), mon = K.addDays(K.weekStart(K.ymd()), 7 * week), nowHm = K.hm(new Date());
+  if (selDate < mon || selDate > K.addDays(mon, 6)) { selDate = mon; for (let i = 0; i < 5; i++) if (K.addDays(mon, i) === K.ymd()) selDate = K.ymd(); }
+  const days = Array.from({ length: 7 }, (_, i) => K.addDays(mon, i)).filter((d, i) => i < 5 || K.lessonsOn(d, true).length);
+  const ago = Math.round((Date.now() - (f.at || 0)) / 36e5);
+  let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><button class="iconbtn" type="button" data-week="-1" aria-label="Previous week">${svg('left')}</button>
+    <b style="flex:1;text-align:center">${week === 0 ? 'This week' : week === 1 ? 'Next week' : week === -1 ? 'Last week' : 'Week of ' + K.fmtDate(mon)}</b><button class="iconbtn" type="button" data-week="1" aria-label="Next week">${svg('right')}</button></div>`;
+  html += `<div class="tabs">${days.map(d => { const n = K.lessonsOn(d).length; return `<button type="button" data-date="${d}" aria-pressed="${selDate === d}">${K.DAYS_SHORT[K.fromYmd(d).getDay()]} ${K.fromYmd(d).getDate()}<span class="n">${n || ''}</span></button>`; }).join('')}</div>`;
+  const all = K.isHoliday(selDate) ? [] : K.lessonsOn(selDate, true), hol = K.isHoliday(selDate);
+  if (hol) html += `<div class="empty"><b>🌴 ${esc(hol.name || 'No school')}</b></div>`;
+  else if (!all.length) html += `<div class="empty"><b>No lessons on ${esc(K.fmtDay(selDate, true))}</b>${selDate > f.to ? 'Your imported timetable doesn’t reach this far yet.' : ''}</div>`;
+  else html += `<div class="list">` + all.map((l, i) => {
+    const prev = all.slice(0, i).reverse().find(x => !x.cancelled), gap = prev && !l.cancelled && l.start > prev.end ? `<div class="gap">Break · ${minsBetween(prev.end, l.start)} min</div>` : '';
+    const st = l.cancelled ? 'past' : selDate === K.ymd() ? (l.end <= nowHm ? 'past' : l.start <= nowHm ? 'now' : '') : '';
+    return gap + `<div class="lesson ${st}" style="--dot:${K.subjectColor(l.subject)}"><span class="tm num">${l.start}<small>${l.end}</small></span><span class="bar"></span>
+      <span><b style="${l.cancelled ? 'text-decoration:line-through' : ''}">${esc(l.subject)}</b>${l.cancelled ? ' <span class="tag" style="color:var(--bad)">cancelled</span>' : ''}<span class="meta small muted" style="display:block">${[l.room && esc(l.room), esc(l.teacher || '')].filter(Boolean).join(' · ') || '&nbsp;'}</span></span></div>`;
+  }).join('') + `</div>`;
+  html += `<p class="hint" style="margin-top:6px">${f.source === 'link' ? `📅 From your school calendar · updated ${ago < 1 ? 'less than an hour' : ago + ' h'} ago · <a href="#" data-act="refreshFeed" style="color:var(--ct)">refresh</a>` : f.source === 'photo' ? '📷 From a screenshot' : '📄 From a calendar file'} · until ${esc(K.fmtDate(f.to))} · <a href="#" data-act="import" style="color:var(--ct)">change</a></p>`;
+  return html;
+}
+
+/* ---------- import timetable ---------- */
+function importSheet() {
+  const sc = K.school(), f = K.feed();
+  const form = K.form({
+    title: 'Import your timetable', saveLabel: 'Close',
+    fields: [{ type: 'html', k: 'x', html: `
+      <div class="list" style="margin-bottom:12px">
+        <button class="item" type="button" data-imp="link" style="width:100%"><span style="font-size:22px">📅</span><span class="body"><span class="title">Calendar link <span class="tag" style="color:var(--good)">best</span></span><span class="meta"><span>Stays up to date by itself: changes, cancelled lessons, new weeks.</span></span></span><span class="muted">›</span></button>
+        <button class="item" type="button" data-imp="file" style="width:100%"><span style="font-size:22px">📄</span><span class="body"><span class="title">Calendar file (.ics)</span><span class="meta"><span>A file you downloaded. Import it again when it changes.</span></span></span><span class="muted">›</span></button>
+        <button class="item" type="button" data-imp="photo" style="width:100%"><span style="font-size:22px">📷</span><span class="body"><span class="title">Screenshot or photo</span><span class="meta"><span>The AI reads your timetable from a picture. Works with any school system.</span></span></span><span class="muted">›</span></button>
+      </div>
+      <details><summary style="font-weight:700;cursor:pointer">Where do I find the link in Osiris?</summary><ol class="small muted" style="line-height:1.6;padding-left:20px;margin:8px 0 0">
+        <li>Open <b>Osiris</b> (the app or the website) and go to <b>Rooster</b> (timetable).</li>
+        <li>Look for <b>Agenda koppelen</b>, <b>Exporteren</b>, <b>iCal</b> or a calendar icon (on the website often top right).</li>
+        <li>Copy the link (it often starts with <b>https://</b> or <b>webcal://</b> and ends in <b>.ics</b>) and paste it in Life Hub.</li>
+        <li>Can’t find it? Use a <b>screenshot</b> of your week, or ask your mentor whether the timetable can be linked to a calendar app.</li></ol></details>
+      ${f ? `<button class="btn danger block" type="button" data-imp="remove" style="margin-top:14px">Stop using the imported timetable</button>` : ''}` }],
+    save: () => {},
+  });
+  form.addEventListener('click', e => { const b = e.target.closest('[data-imp]'); if (!b) return; form.parentElement.remove(); ({ link: importLink, file: importFile, photo: importPhoto, remove: removeFeed })[b.dataset.imp](); });
+}
+function saveFeed(feed) { K.put('schoolfeed', feed); week = 0; selDate = K.ymd(); tab = 'week'; render(); K.toast(`Imported ${K.plural(feed.lessons.length, 'lesson')} until ${K.fmtDate(feed.to)} ✓`); }
+function removeFeed() { if (!confirm('Stop using the imported timetable? Your weekly timetable is used again.')) return; const sc = K.school(); delete sc.icsUrl; K.saveSchool(sc); K.put('schoolfeed', null); render(); }
+async function fetchFeed(url) {
+  const u = url.replace(/^webcal:/i, 'https:');
+  const r = await fetch(u, { cache: 'no-store' }); if (!r.ok) throw new Error('The link answered ' + r.status + '.');
+  const t = await r.text(); if (!/BEGIN:VCALENDAR/.test(t)) throw new Error('That link isn’t a calendar.');
+  return K.ics.toFeed(t, { source: 'link' });
+}
+function importLink() {
+  const sc = K.school();
+  K.form({
+    title: 'Calendar link', saveLabel: 'Import',
+    fields: [{ k: 'url', label: 'Paste the link from Osiris (Agenda koppelen / Exporteren)', value: sc.icsUrl || '', placeholder: 'https://… or webcal://…', required: true, attrs: 'autocomplete="off" inputmode="url"' },
+      { type: 'html', k: 'h', html: `<p class="small muted" style="margin:-4px 0 0">The link is private to you: it’s saved in your own cloud and only used to read your timetable.</p>` }],
+    async save(v) {
+      const url = v.url.trim(); if (!/^(https?|webcal):\/\//i.test(url)) { K.toast('Paste the whole link, starting with https:// or webcal://'); return false; }
+      sc.icsUrl = url; K.saveSchool(sc);
+      try { saveFeed(await fetchFeed(url)); }
+      catch (e) {
+        /* the school site doesn't let web pages read it: your private job fetches it instead */
+        K.toast(/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? 'Saved. Your phone can’t read this link directly, so your private job fetches it within about 30 minutes.' : e.message);
+        render();
+      }
+    },
+  });
+}
+function importFile() {
+  const i = document.createElement('input'); i.type = 'file'; i.accept = '.ics,text/calendar';
+  i.onchange = async () => { const f = i.files[0]; if (!f) return; try { saveFeed(K.ics.toFeed(await f.text(), { source: 'file' })); } catch (e) { K.toast(e.message); } };
+  i.click();
+}
+function importPhoto() {
+  if (!K.aiReady()) { K.toast('Add your AI key first: Life Hub Settings → AI assistant.'); return; }
+  const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.multiple = true;
+  i.onchange = async () => {
+    const files = [...i.files]; if (!files.length) return;
+    K.toast('Reading your timetable…');
+    const prompt = `This is a picture of a school timetable (rooster) of a student in the Netherlands. Today is ${K.ymd()} (${K.DAYS[new Date().getDay()]}).
+Return ONLY JSON: {"dated": true|false, "lessons": [{"date": "YYYY-MM-DD or empty", "day": "Monday..Sunday", "start": "HH:MM", "end": "HH:MM", "subject": "", "room": "", "teacher": "", "cancelled": false}]}
+Use "dated": true and fill "date" when the picture shows dates; otherwise give only "day". 24-hour times. Keep subject names as written. Leave out breaks and empty slots.`;
+    try {
+      const raw = await K.ai(prompt, { json: true, images: files });
+      const j = JSON.parse(raw.replace(/^```(?:json)?|```$/g, '').trim()), ls = (j.lessons || []).filter(l => /^\d{1,2}:\d\d$/.test(l.start) && l.subject);
+      if (!ls.length) throw new Error('I couldn’t find lessons in that picture. Try a clearer screenshot of one week.');
+      previewPhoto(j.dated && ls.every(l => /^\d{4}-\d\d-\d\d$/.test(l.date)), ls);
+    } catch (e) { K.toast(e.nokey ? e.message : 'Couldn’t read it: ' + e.message); }
+  };
+  i.click();
+}
+function previewPhoto(dated, ls) {
+  const DN = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6, zondag: 0, maandag: 1, dinsdag: 2, woensdag: 3, donderdag: 4, vrijdag: 5, zaterdag: 6 };
+  const norm = t => String(t).replace(/^(\d):/, '0$1:');
+  const rows = ls.map(l => ({ ...l, start: norm(l.start), end: norm(l.end || l.start), d: dated ? l.date : DN[String(l.day).toLowerCase()] })).filter(l => dated || l.d != null);
+  K.form({
+    title: `Found ${K.plural(rows.length, 'lesson')}`, saveLabel: dated ? 'Use these dates' : 'Use as my weekly timetable',
+    fields: [{ type: 'html', k: 'x', html: `<p class="small muted" style="margin-top:-6px">${dated ? 'These are for the dates shown in your picture.' : 'No dates in the picture, so these repeat every week.'} Check them, then tap the button.</p>
+      <div class="list" style="max-height:50vh;overflow-y:auto">${rows.map(l => `<div class="item"><span class="body"><span class="title">${esc(l.subject)}</span><span class="meta"><span>${dated ? esc(K.fmtDay(l.d)) : K.DAYS[l.d]} ${l.start}–${l.end}</span>${l.room ? `<span>${esc(l.room)}</span>` : ''}${l.teacher ? `<span>${esc(l.teacher)}</span>` : ''}${l.cancelled ? '<span class="late">cancelled</span>' : ''}</span></span></div>`).join('')}</div>` }],
+    save() {
+      if (dated) { const dates = rows.map(l => l.d).sort();
+        saveFeed({ source: 'photo', at: Date.now(), from: K.weekStart(dates[0]), to: K.addDays(K.weekStart(dates[dates.length - 1]), 6), holidays: [], lessons: rows.map(l => ({ id: K.uid(), date: l.d, start: l.start, end: l.end, subject: l.subject, room: l.room || '', teacher: l.teacher || '', cancelled: !!l.cancelled })) }); }
+      else { const sc = K.school(); sc.lessons = rows.map(l => K.stamp({ id: K.uid(), day: l.d, start: l.start, end: l.end, subject: l.subject, room: l.room || '', teacher: l.teacher || '' })); K.saveSchool(sc); tab = 'week'; render(); K.toast(`Timetable saved: ${K.plural(rows.length, 'lesson')} a week ✓`); }
+    },
+  });
+}
+/* a calendar link: refresh it now and then from this phone, if the school site allows it */
+async function refreshFeed(force) {
+  const sc = K.school(), f = K.feed(); if (!sc.icsUrl) return;
+  if (!force && f && f.source === 'link' && Date.now() - (f.at || 0) < 6 * 36e5) return;
+  try { const nf = await fetchFeed(sc.icsUrl); K.put('schoolfeed', nf); if (tab === 'week') render(); if (force) K.toast('Timetable updated ✓'); }
+  catch { if (force) K.toast('Your phone can’t read the link directly. Your private job updates it every few hours.'); }
+}
+
 function minsBetween(a, b) { const [h1, m1] = a.split(':').map(Number), [h2, m2] = b.split(':').map(Number); return (h2 * 60 + m2) - (h1 * 60 + m1); }
 
 function editLesson(l, preset) {
@@ -244,8 +365,11 @@ function needFor(subject) {
 
 /* ---------- setup ---------- */
 function setupHtml() {
-  const sc = K.school();
-  let html = `<div class="sec">Subjects<button class="act" type="button" data-act="addSubject">+ Add</button></div>`;
+  const sc = K.school(), f = K.feed();
+  let html = `<div class="sec">Timetable</div><div class="card"><div class="big" style="font-size:16px">${f ? (f.source === 'link' ? '📅 Linked to your school calendar' : f.source === 'photo' ? '📷 Imported from a screenshot' : '📄 Imported from a calendar file') : '✍️ Typed in by hand'}</div>
+    <div class="muted small" style="margin-top:4px">${f ? `${K.plural(f.lessons.length, 'lesson')} until ${esc(K.fmtDate(f.to))}` : `${K.plural(sc.lessons.length, 'lesson')} a week`}</div>
+    <button class="btn sm" type="button" data-act="import" style="margin-top:10px">📥 ${f ? 'Change' : 'Import timetable'}</button></div>`;
+  html += `<div class="sec">Subjects<button class="act" type="button" data-act="addSubject">+ Add</button></div>`;
   const subs = subjects();
   html += subs.length ? `<div class="list">${subs.map(s => `<button class="item" type="button" data-editsubj="${esc(s)}" style="width:100%"><span class="tag" style="--dot:${K.subjectColor(s)}"><i></i></span><span class="body title">${esc(s)}</span><span class="muted">›</span></button>`).join('')}</div>` : `<p class="hint" style="margin:0 2px 12px">Subjects are added automatically from your timetable.</p>`;
   html += `<div class="sec">Holidays<button class="act" type="button" data-act="addHoliday">+ Add</button></div>`;
@@ -290,6 +414,9 @@ document.addEventListener('click', e => {
   const d = b.dataset;
   if (d.tab) { tab = d.tab; history.replaceState(null, '', '#' + tab); render(); }
   else if (d.day) { day = +d.day; render(); }
+  else if (d.date) { selDate = d.date; render(); }
+  else if (d.week) { week += +d.week; selDate = ''; render(); }
+  else if (d.act === 'import') importSheet();
   else if (d.lesson) editLesson(K.school().lessons.find(l => l.id === d.lesson));
   else if (d.hwdone) { const h = K.homework.byId(d.hwdone); h.done = !h.done; h.doneAt = h.done ? Date.now() : null; K.homework.upsert(h); render(); if (h.done) K.toast('Done ✓', () => { h.done = false; K.homework.upsert(h); render(); }); }
   else if (d.hw) editHw(K.homework.byId(d.hw));
@@ -308,9 +435,14 @@ document.addEventListener('change', e => {
   if (e.target.id === 'remHw') { const sc = K.school(); sc.remindHw = e.target.checked; K.saveSchool(sc); if (sc.remindHw) K.askNotify(); }
   if (e.target.id === 'remTime') { const sc = K.school(); sc.remindTime = e.target.value || '19:00'; K.saveSchool(sc); K.toast('Saved'); }
 });
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[data-act]'); if (!a) return; e.preventDefault();
+  if (a.dataset.act === 'import') importSheet(); else if (a.dataset.act === 'refreshFeed') refreshFeed(true);
+});
 addEventListener('hashchange', () => { const h = location.hash.slice(1); if (TABS.some(t => t[0] === h)) { tab = h; render(); } });
 K.$('#fab').innerHTML = svg('plus');
 render();
+refreshFeed();
 setInterval(() => { if (tab === 'week' && document.visibilityState === 'visible') render(); }, 60000);
 </script>
 </body>
