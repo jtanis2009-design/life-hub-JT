@@ -234,3 +234,74 @@
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') setTimeout(musicSync, 1500); });
   setInterval(musicSync, 15 * 60000);
 })();
+
+/* 🚌 Bus watcher: while Life Hub is open (any page, also night mode), checks your bus every 2 minutes.
+   Watches today's school bus (from the school alarm plan) and any bus you follow in Travel (🔔).
+   Tells you when it's late, back on time, or cancelled, and finds the next bus that still works. */
+(function () {
+  var J = function (k, d) { try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+  var S = function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  var hm = function (d) { d = new Date(d); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); };
+  var ymd = function (d) { d = d || new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
+  var busy = false;
+  function notify(title, body) {
+    try { if (window.K && K.toast) K.toast(title + (body ? ' · ' + body : '')); } catch (e) {}
+    try { if (Notification.permission === 'granted' && navigator.serviceWorker) navigator.serviceWorker.ready.then(function (r) { r.showNotification(title, { body: body || '', tag: 'bus', renotify: true, icon: (window.Hub ? Hub.root : '/') + 'icons/icon-192.png', data: { url: (window.Hub ? Hub.root : '/') + 'travel/' } }); }); } catch (e) {}
+  }
+  /* the buses to watch right now */
+  function watches() {
+    var out = [], now = Date.now();
+    var mp = (J('hub.mornings', {}) || {})[ymd()];
+    if (mp && mp.bus && mp.bus.trip) out.push(Object.assign({ key: 'school', school: true }, mp.bus));
+    var f = J('hub.buswatch', null);
+    if (f && f.trip) { if (now - Date.parse(f.time || f.sched) > 15 * 60000) localStorage.removeItem('hub.buswatch'); else out.push(Object.assign({ key: 'follow' }, f)); }
+    /* from 2½ hours before it leaves until it has left */
+    return out.filter(function (w) { var dep = Date.parse(w.time || w.sched); return dep - now < 150 * 60000 && now - dep < 3 * 60000; });
+  }
+  async function find(w) {
+    var q = new URLSearchParams({ fromPlace: w.fromPlace, toPlace: w.toPlace, time: new Date(Date.parse(w.qtime || w.sched) - 60000).toISOString(), numItineraries: '6' });
+    var r = await fetch('https://api.transitous.org/api/v5/plan?' + q); if (!r.ok) throw new Error(r.status);
+    var its = (await r.json()).itineraries || [];
+    for (var i = 0; i < its.length; i++) for (var j = 0; j < its[i].legs.length; j++) { var l = its[i].legs[j]; if (l.tripId === w.trip) return l; }
+    return null;
+  }
+  async function check() {
+    if (busy || !navigator.onLine || document.visibilityState !== 'visible') return;
+    var list = watches(); if (!list.length) return;
+    busy = true;
+    try {
+      var st = J('hub.busstate', {}) || {};
+      for (var i = 0; i < list.length; i++) {
+        var w = list[i], id = w.trip + '@' + w.sched, s = st[id] || { delay: 0, told: 0 };
+        var l = await find(w).catch(function () { return undefined; });
+        if (l === undefined) continue;   /* no internet / API trouble: try again in 2 min */
+        s.at = Date.now(); s.miss = l ? 0 : (s.miss || 0) + 1;
+        var name = (w.line || 'Your bus') + ' (' + hm(w.sched) + (w.stop ? ', ' + w.stop : '') + ')';
+        if (l && (l.cancelled || (l.from && l.from.cancelled))) {
+          s.cancelled = true;
+          if (!s.toldCancel) { s.toldCancel = 1; await nextBus(w, name, 'is cancelled ❌'); }
+        } else if (l) {
+          var d = Math.round((Date.parse(l.startTime) - Date.parse(l.scheduledStartTime)) / 60000);
+          s.delay = d; s.live = !!l.realTime; s.time = l.startTime; s.cancelled = false;
+          if (d >= 2 && Math.abs(d - (s.told || 0)) >= 2) { s.told = d; notify('⏱ ' + name + ' is ' + d + ' min late', 'Leaves at ' + hm(l.startTime) + ' instead.' + (w.school && w.spare != null && d > w.spare ? ' That eats your whole safety margin. Check Travel for another bus.' : '')); }
+          else if (d < 2 && (s.told || 0) >= 2) { s.told = 0; notify('✅ ' + name + ' is on time again', 'Leaves at ' + hm(l.startTime) + '.'); }
+        } else if (s.miss === 3) notify('⚠️ ' + name + ' is missing from the live times', 'It may not run. Check Travel for the next bus.');
+        st[id] = s;
+      }
+      for (var k in st) if (Date.now() - (st[k].at || 0) > 864e5) delete st[k];
+      S('hub.busstate', st);
+    } catch (e) {} finally { busy = false; }
+  }
+  /* the bus is cancelled: plan again (school: picks a new bus and may move the alarm) */
+  async function nextBus(w, name, what) {
+    if (w.school && window.K && K.planMorning) {
+      var p = await K.planMorning(ymd(), true).catch(function () { return null; });
+      if (p && p.bus && p.bus.trip !== w.trip) return notify('❌ ' + name + ' ' + what.replace(' ❌', ''), 'Take ' + p.line + ' at ' + p.bus.stopTime + ' instead (at school ' + p.arrive + ').');
+    }
+    notify('❌ ' + name + ' ' + what.replace(' ❌', ''), 'Open Travel to see the next bus.');
+  }
+  window.LHBus = { check: check, watches: watches, state: function () { return J('hub.busstate', {}) || {}; } };
+  setTimeout(check, 5000);
+  setInterval(check, 2 * 60000);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') setTimeout(check, 2000); });
+})();

@@ -258,6 +258,8 @@ body.map-mode .head-wrap { width: 100%; padding-bottom: 12px; }
 .tp-n .cxl { color: var(--bad); font-weight: 700; }
 
 .track-btn { margin-left: auto; border: 1px solid var(--accent); color: var(--accent); background: var(--surface); border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+.follow-btn { margin-left: 6px; } .follow-btn::before { display: none; } .follow-btn[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.follow-toast { position: fixed; left: 12px; right: 12px; bottom: calc(var(--hubnav-h, 0px) + 16px); z-index: 90; background: var(--surface); border: 1px solid var(--accent); border-radius: 14px; padding: 12px 14px; font-weight: 600; box-shadow: 0 8px 30px #0005; }
 .track-btn::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px var(--accent-soft); }
 footer a { color: inherit; }
 </style>
@@ -567,6 +569,9 @@ function timeCell(actual, sched) {
   if (d > 0) return `<span class="t late">${t(actual)}<s>${t(sched)}</s></span>`;
   return `<span class="t">${t(actual || sched)}</span>`;
 }
+/* 🔔 follow a bus: Life Hub checks it every 2 min (any page) and tells you about delays and cancellations */
+function followed(trip) { try { const f = JSON.parse(localStorage.getItem("hub.buswatch") || "null"); return !!(f && f.trip === trip); } catch { return false; } }
+function legChipText(l) { const m = { BUS: "Bus", TRAM: "Tram", SUBWAY: "Metro", METRO: "Metro", RAIL: "Train", REGIONAL_RAIL: "Train", COACH: "Bus", FERRY: "Ferry" }; return `${m[l.mode] || "Ride"} ${l.routeShortName || l.displayName || ""}`.trim(); }
 function renderDetail(it, alerts) {
   const parts = [];
   for (const l of it.legs) {
@@ -581,7 +586,7 @@ function renderDetail(it, alerts) {
     const stops = l.intermediateStops?.length;
     parts.push(`<div class="leg">
       ${timeCell(l.from.departure, l.from.scheduledDeparture)}<span class="stop">${esc(l.from.name)}${tr}</span>
-      <span class="ride">${legChip(l)} towards ${esc(l.headsign || l.to.name)}${stops ? ` · ${stops} stops` : ""}${l.agencyName ? ` · ${esc(l.agencyName)}` : ""}${l.cancelled ? ` · <strong style="color:var(--bad)">cancelled</strong>` : ""}${l.tripId ? `<button type="button" class="track-btn" data-track="${esc(l.tripId)}" data-board-id="${esc(l.from.stopId || "")}" data-board-name="${esc(l.from.name)}">Track live</button>` : ""}</span>
+      <span class="ride">${legChip(l)} towards ${esc(l.headsign || l.to.name)}${stops ? ` · ${stops} stops` : ""}${l.agencyName ? ` · ${esc(l.agencyName)}` : ""}${l.cancelled ? ` · <strong style="color:var(--bad)">cancelled</strong>` : ""}${l.tripId ? `<button type="button" class="track-btn" data-track="${esc(l.tripId)}" data-board-id="${esc(l.from.stopId || "")}" data-board-name="${esc(l.from.name)}">Track live</button><button type="button" class="track-btn follow-btn" data-follow="${esc(l.tripId)}" data-sched="${esc(l.scheduledStartTime || "")}" data-time="${esc(l.startTime || "")}" data-qtime="${esc(it.startTime)}" data-line="${esc((legChipText(l)))}" data-stop="${esc(l.from.name)}" data-head="${esc(l.headsign || l.to.name || "")}" aria-pressed="${followed(l.tripId)}">${followed(l.tripId) ? "🔔 Following" : "🔔 Alert me"}</button>` : ""}</span>
       ${timeCell(l.to.arrival, l.to.scheduledArrival)}<span class="stop">${esc(l.to.name)}${ttr}</span>
     </div>`);
   }
@@ -668,6 +673,20 @@ $("#trips").addEventListener("keydown", e => {
 });
 $("#list").addEventListener("click", e => {
   if (e.target.closest("#retry")) return load();
+  const fb = e.target.closest("[data-follow]");
+  if (fb) {
+    const d = fb.dataset;
+    if (followed(d.follow)) { localStorage.removeItem("hub.buswatch"); fb.textContent = "🔔 Alert me"; fb.setAttribute("aria-pressed", "false"); return; }
+    const trip = state.trips.find(x => x.id === state.selected); if (!trip) return;
+    const [from, to] = ends(trip);
+    localStorage.setItem("hub.buswatch", JSON.stringify({ trip: d.follow, sched: d.sched, time: d.time, qtime: d.qtime, line: d.line, stop: d.stop, headsign: d.head, fromPlace: from.place, toPlace: to.place }));
+    document.querySelectorAll("[data-follow]").forEach(b => { const on = b.dataset.follow === d.follow; b.textContent = on ? "🔔 Following" : "🔔 Alert me"; b.setAttribute("aria-pressed", on); });
+    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission();
+    const box = document.createElement("div"); box.className = "follow-toast"; box.textContent = `Following ${d.line} at ${t(d.time || d.sched)}. Life Hub checks it every 2 min while open and tells you if it's late or cancelled.`;
+    document.body.appendChild(box); setTimeout(() => box.remove(), 5000);
+    window.LHBus && window.LHBus.check();
+    return;
+  }
   const tb = e.target.closest("[data-track]");
   if (tb) { setView("map"); window.LiveMap?.track(tb.dataset.track, { id: tb.dataset.boardId, name: tb.dataset.boardName }); return; }
   const b = e.target.closest("[data-open]");

@@ -66,7 +66,7 @@ function render() {
   if (!list.length) html += `<div class="empty"><b>No alarms yet</b>Tap + for a normal alarm, or add a smart school alarm that follows your timetable.<br><br><button class="btn primary" type="button" data-act="school">🎓 Add school alarm</button></div>`;
   else html += `<div class="list">${list.map(a => {
     const d = a.smart ? nextDayWith(a) : null, t = a.smart ? K.alarmTime(a, d) : a.time, mp = a.smart && K.morningPlan(d);
-    const how = a.smart ? (mp ? `🚌 ${K.fmtDay(d)}: leave ${mp.leave}${mp.line ? ' · ' + mp.line : ''} · at school ${mp.arrive}` : '🎓 follows your first lesson') : daysText(a.days);
+    const how = a.smart ? (mp ? `🚌 ${K.fmtDay(d)}: ${mp.line || 'bus'} ${mp.bus ? mp.bus.stopTime : mp.leave}${mp.earlier ? ` (${mp.earlier} before the last one, ${mp.lastBus})` : ''} · at school ${mp.arrive}` : '🎓 follows your first lesson') : daysText(a.days);
     return `<div class="alarm ${a.on ? '' : 'off'}"><button class="body" type="button" data-edit="${a.id}"><div class="tm">${t || '--:--'}</div><span>${esc(a.label || 'Alarm')} · ${esc(how)}</span></button>
       <button class="sw" type="button" role="switch" aria-checked="${!!a.on}" data-tog="${a.id}" aria-label="${a.on ? 'Turn off' : 'Turn on'} ${esc(a.label || 'alarm')}"></button></div>`;
   }).join('')}</div>`;
@@ -95,8 +95,10 @@ function edit(a, preset) {
     title: isNew ? (a.smart ? 'School alarm' : 'New alarm') : 'Edit alarm',
     fields: [
       ...(a.smart ? [{ type: 'html', k: '_s', html: `<p class="small muted" style="margin-top:-6px">Looks up the bus that gets you to your first lesson on time (your trip in Travel) and wakes you in time to catch it. Without a connection it rings ${K.sleepCfg().wakeBefore} minutes before your first lesson. Days without school use the time below, or no alarm if it’s empty.</p>` },
-        { k: 'ready', label: 'Minutes to get ready', type: 'number', value: K.morningCfg().ready, half: true, hint: 'Wake-up → out the door' },
+        { k: 'ready', label: 'Alarm → on the bus (min)', type: 'number', value: K.morningCfg().ready, half: true, hint: 'At least 60' },
         { k: 'early', label: 'Minutes early at school', type: 'number', value: K.morningCfg().early, half: true, hint: 'Bus arrives before lesson' },
+        { k: 'earlier', label: 'Take a bus earlier than the last one that makes it', type: 'seg', value: K.morningCfg().earlier || 'auto', options: [['auto', 'Best fit (2–4)'], ['2', '2 earlier'], ['3', '3 earlier'], ['4', '4 earlier']] },
+        { k: 'spare', label: 'Best fit aims for at least … min spare', type: 'number', value: K.morningCfg().spare || 20, hint: 'Picks the closest of the 2–4 earlier buses that gives this much margin' },
         { k: 'bus', label: '🚌 Use real bus times', type: 'checkbox', value: K.morningCfg().bus !== false }] : []),
       { k: 'time', label: a.smart ? 'Time on days without school (optional)' : 'Time', type: 'time', value: a.time, required: !a.smart },
       ...(a.smart ? [] : [{ type: 'html', k: '_d', html: `<div class="f"><label>Repeat on</label><div class="days" data-days>${[1, 2, 3, 4, 5, 6, 0].map(d => `<button type="button" data-d="${d}" aria-pressed="${(a.days || []).includes(d)}">${K.DAYS_SHORT[d].slice(0, 2)}</button>`).join('')}</div><div class="small muted" style="margin-top:4px">No days = rings once.</div></div>` }]),
@@ -112,8 +114,10 @@ function edit(a, preset) {
     save(v) {
       const days = a.smart ? [] : [...f.querySelectorAll('[data-days] [aria-pressed="true"]')].map(b => +b.dataset.d);
       Object.assign(a, { time: v.time, label: v.label, snooze: v.snooze || 9, on: v.on, days, sound: v.sound || 'beep', fade: +v.fade, vol: +v.vol || 100, beepsAfter: +v.beepsAfter });
-      if (a.smart) { const mc = K.morningCfg(), changed = mc.ready !== (v.ready || 45) || mc.early !== (v.early || 0) || mc.bus !== v.bus;
-        K.put('morning', Object.assign(mc, { ready: v.ready || 45, early: v.early || 0, bus: v.bus }));
+      if (a.smart) { const mc = K.morningCfg(), nv = { ready: Math.max(60, v.ready || 60), early: v.early || 0, bus: v.bus, earlier: v.earlier || 'auto', spare: v.spare || 20 };
+        if ((v.ready || 60) < 60) K.toast('Set to 60 minutes: the alarm goes at least an hour before your bus.');
+        const changed = ['ready', 'early', 'bus', 'earlier', 'spare'].some(x => mc[x] !== nv[x]);
+        K.put('morning', Object.assign(mc, nv));
         if (changed) { K.put('mornings', {}); planAhead(true); } }
       if (!a.smart && !days.length) a.once = K.alarmNextOnce(a.time); else delete a.once;
       AL.upsert(a); if (!K.notifyOn()) K.askNotify(); render();
@@ -151,7 +155,10 @@ async function startNight() {
   prepareYt();
   if (AL.all().some(a => a.on && (TONES.byId(a.sound) || {}).kind === 'sp')) spDevice().then(dv => { if (!dv) K.toast('🟢 Open the Spotify app once (then come back), so your Spotify alarm can start it. Beeps ring if it can’t.'); }).catch(e => K.toast('🟢 ' + e.message + ' Beeps ring as back-up.'));
   tickNight(); night.timer = setInterval(tickNight, 1000);
-  planAhead(true); night.planner = setInterval(() => planAhead(true), 30 * 60000);   /* bus delays or cancellations move the alarm */
+  planAhead(true); night.planAt = Date.now();
+  /* bus changes or cancellations move the alarm: every 2 min in the last 3 hours before a school alarm, otherwise every 30 min */
+  night.planner = setInterval(() => { const nx = K.nextAlarm(), soon = nx && nx.a.smart && nx.at - Date.now() < 3 * 36e5;
+    if (soon || Date.now() - night.planAt > 30 * 60000) { night.planAt = Date.now(); planAhead(true); } }, 2 * 60000);
   document.addEventListener('visibilitychange', relock);
 }
 async function relock() { if (night && document.visibilityState === 'visible' && (!night.lock || night.lock.released)) { try { night.lock = await navigator.wakeLock.request('screen'); } catch {} } }
