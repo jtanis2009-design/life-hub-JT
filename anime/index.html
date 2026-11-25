@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Anime · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .ani { display: flex; gap: 12px; padding: 12px; border-top: 1px solid var(--line); align-items: stretch; }
+  .ani:first-child { border-top: 0; }
+  .cover { width: 62px; height: 88px; border-radius: 10px; background: var(--surface-2) center / cover; flex: none; display: grid; place-items: center; font-size: 24px; }
+  .ani .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; text-align: left; }
+  .ani .t { font-weight: 700; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .ani .m { font-size: 12.5px; color: var(--muted); }
+  .ani .progress { margin-top: auto; height: 6px; }
+  .plus { flex: none; align-self: center; min-width: 54px; height: 54px; border-radius: 16px; background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); font-weight: 800; font-size: 15px; display: grid; place-items: center; line-height: 1.1; }
+  .plus small { display: block; font-size: 10px; font-weight: 700; opacity: .8; }
+  .today-badge { display: inline-block; font-size: 10.5px; font-weight: 800; color: #0d0f14; background: var(--c); border-radius: 6px; padding: 1px 6px; margin-right: 4px; }
+  .res { display: flex; gap: 12px; padding: 10px 4px; border-top: 1px solid var(--line); width: 100%; text-align: left; align-items: center; }
+  .res:first-child { border-top: 0; }
+  .res .cover { width: 46px; height: 64px; }
+  .stars { display: flex; gap: 2px; flex-wrap: wrap; }
+  .stars button { width: 30px; height: 30px; border-radius: 8px; background: var(--surface-2); font-weight: 800; font-size: 13px; color: var(--muted); }
+  .stars button.on { background: var(--c); color: #0d0f14; }
+</style>
+</head>
+<body style="--c:#ff7eb6">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="Add anime"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+const A = K.anime;
+const TABS = [['watching', 'Watching'], ['plan', 'Plan to watch'], ['done', 'Completed'], ['other', 'Paused / dropped'], ['stats', 'Stats']];
+const STATUS = [['watching', '▶ Watching'], ['plan', '🕒 Plan to watch'], ['done', '✓ Completed'], ['paused', '⏸ Paused'], ['dropped', '✕ Dropped']];
+let tab = K.get('anime.tab', 'watching');
+
+function render() {
+  const all = A.all();
+  const count = k => k === 'other' ? all.filter(a => a.status === 'paused' || a.status === 'dropped').length : all.filter(a => a.status === k).length;
+  let html = K.header('Anime', 'anime') + `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}${k !== 'stats' && count(k) ? `<span class="n">${count(k)}</span>` : ''}</button>`).join('')}</div>`;
+  if (tab === 'stats') html += statsHtml(all);
+  else {
+    let list = all.filter(a => tab === 'other' ? a.status === 'paused' || a.status === 'dropped' : a.status === tab);
+    list.sort((a, b) => (K.animeAirsToday(b) ? 1 : 0) - (K.animeAirsToday(a) ? 1 : 0) || (b.updated || 0) - (a.updated || 0));
+    if (tab === 'done') list.sort((a, b) => (b.score || 0) - (a.score || 0) || (b.finishedAt || 0) - (a.finishedAt || 0));
+    const airing = all.filter(a => a.status === 'watching' && K.animeAirsToday(a));
+    if (tab === 'watching' && airing.length) html += `<div class="card hl"><div class="k">New episode today</div><div class="big" style="font-size:17px">${airing.map(a => esc(a.title)).join(', ')}</div><div class="muted small">${airing.map(a => a.airTime ? `${esc(a.title.split(':')[0])} at ${a.airTime}` : '').filter(Boolean).join(' · ')}</div></div>`;
+    html += list.length ? `<div class="list">${list.map(row).join('')}</div>` : `<div class="empty"><b>${{ watching: 'Not watching anything', plan: 'Nothing planned yet', done: 'Nothing finished yet', other: 'Nothing paused or dropped' }[tab]}</b>Tap + to search for an anime.</div>`;
+  }
+  K.$('#app').innerHTML = html;
+  K.$('#fab').hidden = tab === 'stats';
+}
+function row(a) {
+  const pct = a.eps ? Math.min(100, a.ep / a.eps * 100) : 0;
+  const meta = [];
+  if (a.status === 'watching' && K.animeAirsToday(a)) meta.push(`<span class="today-badge">NEW TODAY</span>`);
+  if (a.airing && a.airDay != null) meta.push(`${K.DAYS[a.airDay]}s${a.airTime ? ' ' + a.airTime : ''}`);
+  if (a.score) meta.push(`★ ${a.score}`);
+  if (a.year) meta.push(a.year);
+  const plus = a.status === 'watching' || a.status === 'plan' || a.status === 'paused';
+  return `<div class="ani"><div class="cover" style="${a.image ? `background-image:url('${esc(a.image)}')` : ''}">${a.image ? '' : '🎬'}</div>
+    <button class="body" type="button" data-edit="${a.id}"><span class="t">${esc(a.title)}</span>
+      <span class="m">${a.status === 'done' ? (a.eps ? `${a.eps} episodes` : 'Completed') : `Episode ${a.ep || 0}${a.eps ? ' of ' + a.eps : ''}`}</span>
+      ${meta.length ? `<span class="m">${meta.join(' · ')}</span>` : ''}
+      ${a.eps && a.status !== 'done' ? `<span class="progress"><i style="width:${pct}%"></i></span>` : ''}</button>
+    ${plus ? `<button class="plus" type="button" data-plus="${a.id}" aria-label="Watched episode ${(a.ep || 0) + 1} of ${esc(a.title)}">+1<small>ep ${(a.ep || 0) + 1}</small></button>` : ''}</div>`;
+}
+function statsHtml(all) {
+  const eps = all.reduce((s, a) => s + (a.status === 'done' ? (a.eps || a.ep || 0) : (a.ep || 0)), 0);
+  const mins = all.reduce((s, a) => s + (a.status === 'done' ? (a.eps || a.ep || 0) : (a.ep || 0)) * (a.epMin || 24), 0);
+  const scored = all.filter(a => a.score), avg = scored.length ? scored.reduce((s, a) => s + a.score, 0) / scored.length : 0;
+  const genres = {}; all.filter(a => a.status !== 'plan').forEach(a => (a.genres || []).forEach(g => genres[g] = (genres[g] || 0) + 1));
+  const top = Object.entries(genres).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const best = scored.sort((a, b) => b.score - a.score).slice(0, 5);
+  const week = all.reduce((s, a) => s + Object.entries(a.log || {}).filter(([d]) => d > K.addDays(K.ymd(), -7)).reduce((x, [, n]) => x + n, 0), 0);
+  return `<div class="grid2"><div class="stat"><div class="k">Episodes watched</div><div class="v num">${eps}</div><div class="s">${week} this week</div></div>
+    <div class="stat"><div class="k">Time watched</div><div class="v num">${Math.floor(mins / 60)}<small> h</small></div><div class="s">about ${(mins / 1440).toFixed(1)} days</div></div></div>
+    <div class="grid2"><div class="stat"><div class="k">Completed</div><div class="v num">${all.filter(a => a.status === 'done').length}</div></div>
+    <div class="stat"><div class="k">Average score</div><div class="v num">${avg ? avg.toFixed(1) : '–'}</div></div></div>
+    ${top.length ? `<div class="card"><div class="k">Favourite genres</div><div class="row-btns" style="margin-top:8px">${top.map(([g, n]) => `<span class="tag">${esc(g)} · ${n}</span>`).join('')}</div></div>` : ''}
+    ${best.length ? `<div class="sec">Your top rated</div><div class="list">${best.map((a, i) => `<div class="item"><b style="width:20px">${i + 1}</b><span class="body title">${esc(a.title)}</span><span class="right">★ ${a.score}</span></div>`).join('')}</div>` : ''}`;
+}
+
+function plusOne(id) {
+  const a = A.byId(id); const before = JSON.parse(JSON.stringify(a));
+  a.ep = (a.ep || 0) + 1; if (a.status !== 'watching') { a.status = 'watching'; a.startedAt = a.startedAt || Date.now(); }
+  a.log = a.log || {}; a.log[K.ymd()] = (a.log[K.ymd()] || 0) + 1;
+  if (a.eps && a.ep >= a.eps) { a.ep = a.eps; a.status = 'done'; a.finishedAt = Date.now(); A.upsert(a); render(); K.toast(`🎉 Finished ${a.title}! Give it a score.`); setTimeout(() => edit(a), 400); return; }
+  A.upsert(a); render(); K.toast(`Episode ${a.ep}${a.eps ? ' of ' + a.eps : ''} ✓`, () => { A.upsert(before); render(); });
+}
+
+/* ---------- search (Jikan = MyAnimeList data, free, no key) ---------- */
+function jstToLocal(dayName, time) {
+  const days = ['sundays', 'mondays', 'tuesdays', 'wednesdays', 'thursdays', 'fridays', 'saturdays'];
+  const wd = days.indexOf(String(dayName || '').toLowerCase()); if (wd < 0) return { day: null, time: '' };
+  const [h, m] = String(time || '00:00').split(':').map(Number);
+  /* next such weekday in Japan (UTC+9, no daylight saving) → convert to this phone's time */
+  const now = new Date(); const ref = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), (h || 0) - 9, m || 0));
+  const jpDay = new Date(ref.getTime() + 9 * 36e5).getUTCDay(); ref.setUTCDate(ref.getUTCDate() + ((wd - jpDay + 7) % 7));
+  return { day: ref.getDay(), time: time ? K.hm(ref) : '' };
+}
+function fromJikan(d) {
+  const b = d.broadcast || {}, loc = jstToLocal(b.day, b.time);
+  const mins = String(d.duration || '').match(/(\d+)\s*min/);
+  return { malId: d.mal_id, title: d.title_english || d.title, titleJp: d.title, image: (d.images && (d.images.webp || d.images.jpg) || {}).large_image_url || (d.images && d.images.jpg || {}).image_url || '',
+    eps: d.episodes || 0, airing: !!d.airing, airDay: d.airing ? loc.day : null, airTime: d.airing ? loc.time : '', year: d.year || (d.aired && d.aired.prop && d.aired.prop.from && d.aired.prop.from.year) || '',
+    genres: (d.genres || []).concat(d.themes || []).map(g => g.name).slice(0, 6), epMin: mins ? +mins[1] : 24, malScore: d.score || 0, type: d.type || '' };
+}
+function searchSheet() {
+  const f = K.form({
+    title: 'Add anime', saveLabel: 'Add without search',
+    fields: [{ k: 'q', label: 'Search', placeholder: 'e.g. Frieren, One Piece, Solo Leveling', attrs: 'autocomplete="off" enterkeyhint="search"' }, { type: 'html', k: 'r', html: `<div id="results" style="min-height:60px"></div>` }],
+    save(v) { setTimeout(() => edit(null, { title: v.q }), 200); },
+  });
+  let t = null;
+  const box = f.querySelector('#results');
+  const run = async q => {
+    if (q.length < 2) { box.innerHTML = ''; return; }
+    box.innerHTML = `<p class="muted small">Searching…</p>`;
+    try {
+      const r = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=10&sfw=true&order_by=members&sort=desc`);
+      if (!r.ok) throw new Error(r.status === 429 ? 'Too many searches. Wait a few seconds.' : 'The anime database didn’t answer (' + r.status + ').');
+      const j = await r.json();
+      const res = (j.data || []).map(fromJikan);
+      f._res = res;
+      box.innerHTML = res.length ? `<div>${res.map((a, i) => `<button class="res" type="button" data-pick="${i}"><span class="cover" style="${a.image ? `background-image:url('${esc(a.image)}')` : ''}"></span>
+        <span style="flex:1;min-width:0"><b style="display:block">${esc(a.title)}</b><span class="small muted">${[a.type, a.year, a.eps ? a.eps + ' eps' : a.airing ? 'airing' : '', a.malScore ? '★ ' + a.malScore : ''].filter(Boolean).join(' · ')}</span>
+        ${A.all().some(x => x.malId === a.malId) ? '<span class="small" style="color:var(--c);display:block">Already on your list</span>' : ''}</span></button>`).join('')}</div>` : `<p class="muted small">Nothing found. Tap “Add without search” to add it yourself.</p>`;
+    } catch (e) { box.innerHTML = `<p class="small" style="color:var(--bad)">${esc(e.message === 'Failed to fetch' ? 'You seem to be offline. You can still add it without search.' : e.message)}</p>`; }
+  };
+  f.elements.q.addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => run(e.target.value.trim()), 450); });
+  f.elements.q.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); run(e.target.value.trim()); } });
+  f.addEventListener('click', e => {
+    const b = e.target.closest('[data-pick]'); if (!b) return;
+    const a = f._res[+b.dataset.pick], ex = A.all().find(x => x.malId === a.malId);
+    f.parentElement.remove();
+    if (ex) { edit(ex); return; }
+    edit(null, Object.assign(a, { status: tab === 'plan' ? 'plan' : 'watching' }));
+  });
+}
+
+function edit(a, preset) {
+  const isNew = !a;
+  a = a || Object.assign({ id: K.uid(), title: '', status: 'watching', ep: 0, eps: 0, score: 0, airing: false, airDay: null, airTime: '', remind: false, notes: '', log: {} }, preset || {});
+  const f = K.form({
+    title: isNew ? 'Add to your list' : a.title,
+    fields: [
+      ...(a.image ? [{ type: 'html', k: '_c', html: `<div style="display:flex;gap:12px;margin:-4px 0 12px"><div class="cover" style="width:70px;height:100px;background-image:url('${esc(a.image)}')"></div><div class="small muted" style="line-height:1.6">${[a.type, a.year, a.eps ? a.eps + ' episodes' : '', a.genres && a.genres.join(', ')].filter(Boolean).map(esc).join('<br>')}</div></div>` }] : []),
+      { k: 'title', label: 'Title', value: a.title, required: true },
+      { k: 'status', label: 'Status', type: 'select', value: a.status, options: STATUS },
+      { k: 'ep', label: 'Episodes watched', type: 'number', value: a.ep || 0, half: true },
+      { k: 'eps', label: 'Total episodes', type: 'number', value: a.eps || '', half: true, hint: 'Empty if still airing' },
+      { type: 'html', k: '_s', html: `<div class="f"><label>Your score</label><div class="stars" data-stars>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => `<button type="button" data-star="${n}" class="${a.score >= n ? 'on' : ''}">${n}</button>`).join('')}</div></div>` },
+      { k: 'airing', label: 'New episodes every week', type: 'checkbox', value: a.airing },
+      { k: 'airDay', label: 'Airs on', type: 'select', value: a.airDay == null ? '' : String(a.airDay), options: [['', '—']].concat([1, 2, 3, 4, 5, 6, 0].map(d => [String(d), K.DAYS[d]])), half: true },
+      { k: 'airTime', label: 'At (your time)', type: 'time', value: a.airTime, half: true },
+      { k: 'remind', label: '🔔 Remind me when a new episode is out', type: 'checkbox', value: a.remind },
+      { k: 'notes', label: 'Notes', value: a.notes, placeholder: 'e.g. watching on Crunchyroll, season 2 next' },
+    ],
+    save(v) {
+      const was = a.status;
+      Object.assign(a, { title: v.title, status: v.status, ep: Math.max(0, v.ep || 0), eps: v.eps || 0, airing: v.airing, airDay: v.airDay === '' ? null : +v.airDay, airTime: v.airTime, remind: v.remind, notes: v.notes, score: a._score != null ? a._score : a.score });
+      delete a._score;
+      if (a.status === 'done' && was !== 'done') { a.finishedAt = Date.now(); if (a.eps) a.ep = a.eps; }
+      if (a.status === 'watching' && !a.startedAt) a.startedAt = Date.now();
+      A.upsert(a); if (a.remind && !K.notifyOn()) K.askNotify();
+      if (isNew) { tab = a.status === 'paused' || a.status === 'dropped' ? 'other' : a.status; K.put('anime.tab', tab); }
+      render();
+    },
+    del: isNew ? null : () => { A.remove(a.id); render(); K.toast('Removed', () => { A.upsert(a); render(); }); },
+  });
+  f.querySelector('[data-stars]').addEventListener('click', e => {
+    const b = e.target.closest('[data-star]'); if (!b) return;
+    const n = +b.dataset.star; a._score = a._score === n || (a._score == null && a.score === n) ? 0 : n;
+    f.querySelectorAll('[data-star]').forEach(x => x.classList.toggle('on', +x.dataset.star <= a._score));
+  });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.tab) { tab = b.dataset.tab; K.put('anime.tab', tab); render(); }
+  else if (b.dataset.plus) plusOne(b.dataset.plus);
+  else if (b.dataset.edit) edit(A.byId(b.dataset.edit));
+  else if (b.id === 'fab') searchSheet();
+});
+K.$('#fab').innerHTML = svg('plus');
+render();
+</script>
+</body>
+</html>

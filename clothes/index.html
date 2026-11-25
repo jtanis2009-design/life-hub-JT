@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Clothes · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .cl { position: relative; background: var(--surface); border: 2px solid var(--line); border-radius: 14px; padding: 6px; text-align: left; min-width: 0; }
+  .cl .ph { aspect-ratio: 1; border-radius: 9px; background: var(--surface-2) center / cover; display: grid; place-items: center; font-size: 30px; }
+  .cl b { display: block; font-size: 12.5px; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cl small { display: block; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cl.sel { border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, var(--surface)); }
+  .cl.sel::after { content: "✓"; position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; background: var(--c); color: #0d0f14; font-weight: 800; font-size: 13px; display: grid; place-items: center; }
+  .cl.dirty .ph { opacity: .45; }
+  .cl .dot { position: absolute; top: 10px; left: 10px; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--surface); }
+  .outfit { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0; }
+  .outfit .ph { width: 54px; height: 54px; flex: none; border-radius: 10px; background: var(--surface-2) center / cover; display: grid; place-items: center; font-size: 22px; }
+  .day { padding: 12px 14px; border-top: 1px solid var(--line); display: block; width: 100%; text-align: left; }
+  .day:first-child { border-top: 0; }
+</style>
+</head>
+<body style="--c:#b48cff">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="Add clothing"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script src="../lib/files.js"></script>
+<script>
+const { esc, svg, eur } = K;
+const C = K.coll('clothes'), O = K.coll('outfits');
+const TYPES = [['top', '👕 Top'], ['hoodie', '🧥 Hoodie / sweater'], ['bottom', '👖 Bottom'], ['shoes', '👟 Shoes'], ['jacket', '🧥 Jacket / coat'], ['sport', '🏃 Sport'], ['acc', '🧢 Accessory'], ['other', '🧦 Other']];
+const ICON = { top: '👕', hoodie: '🧥', bottom: '👖', shoes: '👟', jacket: '🧥', sport: '🏃', acc: '🧢', other: '🧦' };
+const COLORS = [['black', '#1b1b1b'], ['white', '#f2f2f2'], ['grey', '#8a8f98'], ['navy', '#1f2f5a'], ['blue', '#3d7bd9'], ['green', '#3f8f4f'], ['beige', '#d9c39a'], ['brown', '#7a5232'], ['red', '#c93a3a'], ['pink', '#f08bb4'], ['purple', '#8657c9'], ['yellow', '#f2c94c'], ['orange', '#f2994a'], ['multi', 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)']];
+let tab = K.get('clothes.tab', 'today'), filter = '', pick = new Set(), weather = null;
+const thumbs = {};
+
+async function photo(id) { if (!id) return ''; if (thumbs[id] !== undefined) return thumbs[id]; thumbs[id] = (await K.files.thumb(id)) || ''; return thumbs[id]; }
+async function paintPhotos() { for (const el of document.querySelectorAll('[data-photo]')) { const u = await photo(el.dataset.photo); if (u) { el.style.backgroundImage = `url(${u})`; el.textContent = ''; } } }
+const wears = it => O.all().filter(o => (o.items || []).includes(it.id)).map(o => o.date).sort();
+const lastWorn = it => { const w = wears(it); return w[w.length - 1] || ''; };
+
+async function loadWeather() {
+  const p = K.get('place', null) || { lat: 51.7554, lon: 4.1609 };
+  try {
+    const q = new URLSearchParams({ latitude: p.lat, longitude: p.lon, daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,apparent_temperature_min', timezone: 'auto', forecast_days: 1 });
+    const j = await (await fetch('https://api.open-meteo.com/v1/forecast?' + q)).json();
+    weather = { hi: j.daily.temperature_2m_max[0], lo: j.daily.temperature_2m_min[0], feels: j.daily.apparent_temperature_min[0], rain: j.daily.precipitation_probability_max[0] };
+  } catch { weather = null; }
+  if (tab === 'today') render();
+}
+function warmthNeed() { if (!weather) return null; const t = (weather.hi + weather.feels) / 2; return t < 8 ? 3 : t < 16 ? 2 : 1; }
+function advice() {
+  if (!weather) return '';
+  const w = warmthNeed(), bits = [w === 3 ? 'It’s cold: warm layers and a coat.' : w === 2 ? 'Mild: a hoodie or a light jacket.' : 'Warm: T-shirt weather.'];
+  if (weather.rain >= 50) bits.push('Rain likely, so take a rain jacket.');
+  return `${Math.round(weather.lo)}° to ${Math.round(weather.hi)}° · ${bits.join(' ')}`;
+}
+function suggest() {
+  const items = C.all().filter(i => !i.dirty && !i.retired), w = warmthNeed() || 2, recent = new Set(O.all().filter(o => o.date >= K.addDays(K.ymd(), -3)).flatMap(o => o.items || []));
+  const pickOne = types => { const l = items.filter(i => types.includes(i.type) && !recent.has(i.id) && (!i.warmth || Math.abs(i.warmth - w) <= 1)); const any = l.length ? l : items.filter(i => types.includes(i.type)); return any.sort(() => Math.random() - .5)[0]; };
+  const out = [pickOne(['top']), pickOne(['bottom']), pickOne(['shoes'])];
+  if (w >= 2) out.push(pickOne(['hoodie']));
+  if (w === 3 || (weather && weather.rain >= 50)) out.push(pickOne(['jacket']));
+  return out.filter(Boolean);
+}
+
+function render() {
+  let html = K.header('Clothes', 'clothes') + `<div class="tabs">${[['today', 'Today'], ['wardrobe', 'Wardrobe'], ['history', 'Worn'], ['stats', 'Stats']].map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}</button>`).join('')}</div>`;
+  html += ({ today: todayHtml, wardrobe: wardrobeHtml, history: historyHtml, stats: statsHtml })[tab]();
+  K.$('#app').innerHTML = html;
+  K.$('#fab').hidden = tab !== 'wardrobe';
+  paintPhotos();
+}
+function card(i, sel) {
+  const col = COLORS.find(c => c[0] === i.color);
+  return `<button class="cl ${sel ? 'sel' : ''} ${i.dirty ? 'dirty' : ''}" type="button" data-${tab === 'today' ? 'pick' : 'item'}="${i.id}">
+    <div class="ph" data-photo="${i.photo || ''}">${ICON[i.type] || '👕'}</div>${col ? `<span class="dot" style="background:${col[1]}"></span>` : ''}
+    <b>${esc(i.name)}</b><small>${i.dirty ? '🧺 in the wash' : lastWorn(i) ? 'worn ' + K.inDays(K.daysUntil(lastWorn(i))) : 'not worn yet'}</small></button>`;
+}
+function todayHtml() {
+  const items = C.all().filter(i => !i.retired), today = O.all().find(o => o.date === K.ymd());
+  if (today && !pick.size) today.items.forEach(id => pick.add(id));
+  let html = `<div class="card"><div class="k">Weather today</div><div class="muted" style="margin-top:4px">${weather ? esc(advice()) : 'Loading…'}</div></div>`;
+  if (!items.length) return html + `<div class="empty"><b>Add your clothes first</b>Go to Wardrobe and tap + to add your favourite items, with a photo if you like. Then log what you wear each day.</div>`;
+  html += `<div class="sec">${today ? 'You’re wearing' : 'What are you wearing today?'}<button class="act" type="button" data-act="suggest">✨ Suggest</button></div>`;
+  const order = TYPES.map(t => t[0]);
+  html += `<div class="grid">${items.sort((a, b) => order.indexOf(a.type) - order.indexOf(b.type)).map(i => card(i, pick.has(i.id))).join('')}</div>`;
+  const warn = [...pick].map(id => C.byId(id)).filter(i => i && i.type !== 'shoes' && i.type !== 'jacket' && i.type !== 'acc' && wears(i).filter(d => d < K.ymd()).slice(-1)[0] >= K.addDays(K.ymd(), -1));
+  if (warn.length) html += `<p class="hint" style="margin-top:-4px">You also wore ${warn.map(i => esc(i.name)).join(', ')} yesterday.</p>`;
+  html += `<button class="btn primary block" type="button" data-act="saveOutfit" ${pick.size ? '' : 'disabled style="opacity:.5"'}>${today ? 'Update today’s outfit' : `Save outfit (${pick.size})`}</button>`;
+  return html;
+}
+function wardrobeHtml() {
+  const all = C.all().filter(i => !i.retired);
+  let html = `<div class="tabs">${[['', 'All']].concat(TYPES).map(([k, l]) => `<button type="button" data-filter="${k}" aria-pressed="${filter === k}">${l}</button>`).join('')}</div>`;
+  const list = all.filter(i => !filter || i.type === filter);
+  if (!all.length) return html + `<div class="empty"><b>Your wardrobe is empty</b>Tap + to add clothes. A photo makes picking outfits easier.</div>`;
+  const dirty = all.filter(i => i.dirty).length;
+  if (dirty) html += `<div class="row-btns" style="margin-bottom:10px"><span class="small muted" style="align-self:center">🧺 ${dirty} in the wash</span><button class="btn sm" type="button" data-act="clean">Laundry done</button></div>`;
+  html += list.length ? `<div class="grid">${list.map(i => card(i)).join('')}</div>` : '<div class="empty">Nothing here.</div>';
+  return html;
+}
+function historyHtml() {
+  const os = O.all().sort((a, b) => a.date < b.date ? 1 : -1);
+  if (!os.length) return `<div class="empty"><b>No outfits logged yet</b>Pick what you wear on the Today tab.</div>`;
+  return `<div class="list">${os.slice(0, 60).map(o => `<div class="day"><b>${esc(K.fmtDay(o.date, true))}</b>${o.note ? ` <span class="small muted">${esc(o.note)}</span>` : ''}
+    <div class="outfit" style="margin-top:8px">${(o.items || []).map(id => C.byId(id)).filter(Boolean).map(i => `<div class="ph" data-photo="${i.photo || ''}" title="${esc(i.name)}">${ICON[i.type] || '👕'}</div>`).join('')}</div></div>`).join('')}</div>`;
+}
+function statsHtml() {
+  const all = C.all().filter(i => !i.retired);
+  if (!all.length) return `<div class="empty"><b>No clothes yet</b></div>`;
+  const withW = all.map(i => ({ i, n: wears(i).length, last: lastWorn(i) }));
+  const most = withW.filter(x => x.n).sort((a, b) => b.n - a.n).slice(0, 5);
+  const forgotten = withW.filter(x => !x.last || x.last < K.addDays(K.ymd(), -60)).filter(x => !x.i.added || x.i.added < K.addDays(K.ymd(), -14));
+  const value = all.reduce((s, i) => s + K.num(i.price), 0);
+  const cpw = withW.filter(x => K.num(x.i.price) && x.n).map(x => ({ ...x, c: K.num(x.i.price) / x.n })).sort((a, b) => a.c - b.c);
+  let html = `<div class="grid2"><div class="stat"><div class="k">Items</div><div class="v num">${all.length}</div><div class="s">${value ? eur(value) + ' in total' : ''}</div></div>
+    <div class="stat"><div class="k">Outfits logged</div><div class="v num">${O.all().length}</div><div class="s">${O.all().filter(o => o.date >= K.addDays(K.ymd(), -30)).length} in 30 days</div></div></div>`;
+  if (most.length) html += `<div class="sec">Worn most</div><div class="list">${most.map(x => `<div class="item"><span class="body title">${esc(x.i.name)}</span><span class="right num">${x.n}×</span></div>`).join('')}</div>`;
+  if (cpw.length) html += `<div class="sec">Cost per wear</div><div class="list">${cpw.slice(0, 6).map(x => `<div class="item"><span class="body"><span class="title">${esc(x.i.name)}</span><span class="meta"><span>${eur(x.i.price)} · ${x.n}× worn</span></span></span><span class="right num">${eur(x.c)}</span></div>`).join('')}</div><p class="hint">The more you wear something, the better value it was.</p>`;
+  if (forgotten.length) html += `<div class="sec">Not worn in 2 months</div><div class="list">${forgotten.slice(0, 10).map(x => `<button class="item" type="button" data-item="${x.i.id}" style="width:100%"><span class="body title">${esc(x.i.name)}</span><span class="right small muted">${x.last ? K.fmtDay(x.last) : 'never'}</span></button>`).join('')}</div><p class="hint">Wear it, or sell it on Vinted and put the money towards your savings.</p>`;
+  return html;
+}
+
+function editItem(it) {
+  const isNew = !it;
+  it = it || { id: K.uid(), name: '', type: filter || 'top', color: '', brand: '', price: '', warmth: '', photo: '', dirty: false, added: K.ymd() };
+  let newPhoto = null;
+  const f = K.form({
+    title: isNew ? 'Add clothing' : it.name,
+    fields: [
+      { type: 'html', k: '_p', html: `<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px"><div class="ph" id="pv" data-photo="${it.photo || ''}" style="width:84px;height:84px;border-radius:14px;background:var(--surface-2) center/cover;display:grid;place-items:center;font-size:34px;flex:none">${ICON[it.type] || '👕'}</div>
+        <div class="row-btns"><button class="btn sm" type="button" data-cam="1">📷 Take photo</button><button class="btn sm" type="button" data-cam="0">🖼️ Choose</button></div></div>` },
+      { k: 'name', label: 'Name', value: it.name, required: true, placeholder: 'e.g. Black Nike hoodie' },
+      { k: 'type', label: 'Type', type: 'select', value: it.type, options: TYPES, half: true },
+      { k: 'warmth', label: 'Warmth', type: 'select', value: String(it.warmth || ''), options: [['', '—'], ['1', '☀️ Light'], ['2', '🌤️ Medium'], ['3', '❄️ Warm']], half: true },
+      { k: 'color', label: 'Colour', type: 'select', value: it.color, options: [['', '—']].concat(COLORS.map(c => [c[0], c[0]])), half: true },
+      { k: 'brand', label: 'Brand', value: it.brand, half: true },
+      { k: 'price', label: 'Price (€)', type: 'number', value: it.price, half: true, hint: 'For cost per wear' },
+      { k: 'dirty', label: '🧺 In the wash', type: 'checkbox', value: it.dirty, half: true },
+      ...(isNew ? [] : [{ k: 'retired', label: 'I don’t have this any more', type: 'checkbox', value: !!it.retired }]),
+    ],
+    async save(v) {
+      if (newPhoto) { if (it.photo) K.files.del(it.photo); it.photo = await K.files.put(newPhoto, 'clothing.jpg'); K.files.keep(); }
+      Object.assign(it, { name: v.name, type: v.type, warmth: v.warmth ? +v.warmth : '', color: v.color, brand: v.brand, price: v.price, dirty: v.dirty, retired: !!v.retired });
+      C.upsert(it); render();
+    },
+    del: isNew ? null : () => { if (!confirm(`Delete ${it.name}? Logged outfits keep the rest.`)) return false; if (it.photo) K.files.del(it.photo); C.remove(it.id); render(); },
+  });
+  if (it.photo) photo(it.photo).then(u => { if (u) { const pv = f.querySelector('#pv'); pv.style.backgroundImage = `url(${u})`; pv.textContent = ''; } });
+  f.addEventListener('click', e => {
+    const b = e.target.closest('[data-cam]'); if (!b) return;
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; if (b.dataset.cam === '1') inp.capture = 'environment';
+    inp.onchange = async () => { const file = inp.files[0]; if (!file) return; newPhoto = await shrink(file); const pv = f.querySelector('#pv'); pv.style.backgroundImage = `url(${URL.createObjectURL(newPhoto)})`; pv.textContent = ''; };
+    inp.click();
+  });
+}
+/* photos are made smaller (max 800 px) so hundreds of them still fit on the phone */
+function shrink(file) {
+  return new Promise(res => {
+    const img = new Image(); img.onload = () => {
+      const s = Math.min(1, 800 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = img.width * s; c.height = img.height * s;
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); c.toBlob(b => res(b || file), 'image/jpeg', .82); URL.revokeObjectURL(img.src);
+    }; img.onerror = () => res(file); img.src = URL.createObjectURL(file);
+  });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+  if (d.tab) { tab = d.tab; K.put('clothes.tab', tab); render(); }
+  else if (d.filter != null) { filter = d.filter; render(); }
+  else if (d.pick) { pick.has(d.pick) ? pick.delete(d.pick) : pick.add(d.pick); render(); }
+  else if (d.item) editItem(C.byId(d.item));
+  else if (d.act === 'suggest') { const s = suggest(); if (!s.length) return K.toast('Add more clean clothes to get suggestions'); pick = new Set(s.map(i => i.id)); render(); K.toast('How about this? Tap to change.'); }
+  else if (d.act === 'saveOutfit') {
+    const o = O.all().find(x => x.date === K.ymd()) || { id: K.uid(), date: K.ymd() };
+    o.items = [...pick]; O.upsert(o); K.toast('Outfit saved 👕');
+    if (K.get('clothes.autoWash', true)) { for (const id of o.items) { const i = C.byId(id); if (i && ['top', 'sport'].includes(i.type)) { i.wornSinceWash = (i.wornSinceWash || 0) + 1; C.upsert(i); } } }
+    render();
+  }
+  else if (d.act === 'clean') { C.save(C.all().map(i => ({ ...i, dirty: false, wornSinceWash: 0 }))); render(); K.toast('Everything is clean 🧺'); }
+  else if (b.id === 'fab') editItem();
+});
+K.$('#fab').innerHTML = svg('plus');
+render(); loadWeather();
+</script>
+</body>
+</html>

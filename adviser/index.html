@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Money Coach · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js" data-private="1"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .tip { display: flex; gap: 12px; padding: 13px 14px; border-top: 1px solid var(--line); }
+  .tip:first-child { border-top: 0; }
+  .tip .e { font-size: 22px; flex: none; width: 30px; text-align: center; }
+  .tip b { display: block; }
+  .tip p { margin: 3px 0 0; font-size: 13.5px; color: var(--muted); }
+  .tip .save { color: var(--good); font-weight: 800; font-size: 13px; margin-top: 4px; display: block; }
+  .bars { display: flex; align-items: flex-end; gap: 6px; height: 120px; margin-top: 10px; }
+  .bars .col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; min-width: 0; }
+  .bars .pair { display: flex; gap: 2px; align-items: flex-end; width: 100%; justify-content: center; height: calc(100% - 16px); }
+  .bars i { width: 45%; max-width: 12px; border-radius: 4px 4px 2px 2px; min-height: 2px; }
+  .bars i.in { background: var(--good); } .bars i.out { background: var(--bad); opacity: .85; }
+  .bars span { font-size: 10px; color: var(--muted-2); font-weight: 700; }
+  .trend { font-size: 12px; font-weight: 800; }
+  .up { color: var(--bad); } .down { color: var(--good); }
+  .chat { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .msg { padding: 11px 14px; border-radius: 16px; max-width: 90%; line-height: 1.5; font-size: 14.5px; }
+  .msg.me { align-self: flex-end; background: var(--c); color: #0d0f14; border-bottom-right-radius: 5px; }
+  .msg.ai { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .msg ul { margin: 6px 0; padding-left: 18px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chips button { padding: 7px 11px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--muted); }
+</style>
+</head>
+<body style="--c:#3ecf9a">
+<div class="wrap" id="app"></div>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script src="../lib/ai.js"></script>
+<script>
+const { esc, eur } = K;
+let tab = location.hash.slice(1) === 'ask' ? 'ask' : 'overview';
+const chat = K.get('coach.chat', []) || [];
+const ym = d => String(d).slice(0, 7);
+const monthName = m => K.MONTHS[+m.slice(5, 7) - 1].slice(0, 3);
+const FLEX = ['Food & drinks', 'Going out', 'Gaming', 'Clothes', 'Shopping', 'Tikkie & friends', 'Other'];
+
+/* ---------- the numbers ---------- */
+function analyse() {
+  const tx = K.money.all().filter(t => t.date && K.num(t.amount) > 0);
+  const now = K.ymd(), thisM = ym(now);
+  const months = [...new Set(tx.map(t => ym(t.date)))].sort();
+  const full = months.filter(m => m < thisM).slice(-6);                         /* last complete months */
+  const byM = m => tx.filter(t => ym(t.date) === m);
+  const sum = (l, type) => l.filter(t => type === 'in' ? t.type === 'in' : t.type !== 'in').reduce((a, t) => a + K.num(t.amount), 0);
+  const perMonth = months.slice(-12).map(m => ({ m, in: sum(byM(m), 'in'), out: sum(byM(m), 'out') }));
+  const avgIn = full.length ? full.reduce((a, m) => a + sum(byM(m), 'in'), 0) / full.length : 0;
+  const avgOut = full.length ? full.reduce((a, m) => a + sum(byM(m), 'out'), 0) / full.length : 0;
+  const cats = {}; for (const m of full) for (const t of byM(m)) if (t.type !== 'in') cats[t.cat] = (cats[t.cat] || 0) + K.num(t.amount) / full.length;
+  const curCats = {}; for (const t of byM(thisM)) if (t.type !== 'in') curCats[t.cat] = (curCats[t.cat] || 0) + K.num(t.amount);
+  const since90 = K.addDays(now, -90);
+  const shops = {}; for (const t of tx) if (t.type !== 'in' && t.date >= since90) { const k = (t.party || t.note || t.cat).replace(/\s+\d+$/, '').trim(); const s = shops[k] = shops[k] || { n: 0, sum: 0, cat: t.cat }; s.n++; s.sum += K.num(t.amount); }
+  const topShops = Object.entries(shops).sort((a, b) => b[1].sum - a[1].sum).slice(0, 8);
+  const small = tx.filter(t => t.type !== 'in' && t.date >= since90 && K.num(t.amount) < 5);
+  const jobIn = perMonth.map(p => ({ m: p.m, v: byM(p.m).filter(t => t.type === 'in' && t.cat === 'Job').reduce((a, t) => a + K.num(t.amount), 0) }));
+  /* repeating payments: same name in 3+ different months with about the same amount */
+  const rec = {}; for (const t of tx) if (t.type !== 'in') { const k = (t.party || t.note || '').toLowerCase().replace(/\s+\d+$/, '').trim(); if (!k) continue; (rec[k] = rec[k] || []).push(t); }
+  const subsHave = K.subs.all().map(s => s.name.toLowerCase());
+  const recurring = Object.entries(rec).map(([k, l]) => {
+    const ms = new Set(l.map(t => ym(t.date))); const amts = l.map(t => K.num(t.amount)); const avg = amts.reduce((a, b) => a + b, 0) / amts.length;
+    const steady = amts.every(a => Math.abs(a - avg) <= Math.max(1, avg * .15));
+    return { name: l[0].party || l[0].note, months: ms.size, avg, steady, cat: l[0].cat, tracked: subsHave.some(s => k.includes(s) || s.includes(k.split(' ')[0])) };
+  }).filter(r => r.months >= 3 && r.steady && r.avg >= 2).sort((a, b) => b.avg - a.avg);
+  const day = new Date().getDate(), dim = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+  const spentNow = sum(byM(thisM), 'out'), forecast = day > 3 ? spentNow / day * dim : avgOut;
+  const wd = [0, 0, 0, 0, 0, 0, 0]; for (const t of tx) if (t.type !== 'in' && t.date >= since90) wd[K.fromYmd(t.date).getDay()] += K.num(t.amount);
+  return { tx, months, full, perMonth, avgIn, avgOut, cats, curCats, topShops, small, jobIn, recurring, spentNow, forecast, thisM, wd, day, dim };
+}
+
+/* ---------- tips worked out from the numbers ---------- */
+function tips(a) {
+  const out = [];
+  const left = a.avgIn - a.avgOut, rate = a.avgIn ? left / a.avgIn : 0;
+  if (a.avgIn) out.push(rate >= .2 ? { e: '🏆', t: `You keep ${Math.round(rate * 100)}% of what comes in`, p: `About ${eur(left)} a month is left over. Anything above 20% is great. Move it to savings straight after payday so you don’t spend it by accident.` }
+    : rate > 0 ? { e: '📈', t: `You keep ${Math.round(rate * 100)}% of what comes in`, p: `About ${eur(left)} a month is left. A good aim is 20% (${eur(a.avgIn * .2)}). Try the “pay yourself first” trick: put ${eur(Math.max(5, Math.round(a.avgIn * .1)))} into savings on payday.` }
+    : { e: '⚠️', t: 'You spend more than comes in', p: `On average ${eur(-left)} a month more goes out than comes in. Check the biggest categories below and set a budget for one or two of them.` });
+  const tabak = a.topShops.find(([n]) => /tabak|smoke|vape|tobac/i.test(n));
+  if (tabak) out.push({ e: '🧾', t: `${tabak[0]}: ${tabak[1].n}× in 3 months`, p: `That’s ${eur(tabak[1].sum)} in 3 months at one shop. Going half as often saves real money.`, save: tabak[1].sum / 3 * 12 / 2 });
+  if (a.small.length >= 15) { const s = a.small.reduce((x, t) => x + K.num(t.amount), 0); out.push({ e: '🪙', t: `${a.small.length} small buys under €5 in 3 months`, p: `They add up to ${eur(s)}. Snacks and drinks on the go are the usual cause. Bringing a drink and a snack from home a few days a week cuts this a lot.`, save: s / 3 * 12 * .4 }); }
+  for (const [c, v] of Object.entries(a.curCats)) {
+    const avg = a.cats[c] || 0, proj = a.day > 5 ? v / a.day * a.dim : 0;
+    if (avg > 10 && proj > avg * 1.4 && FLEX.includes(c)) out.push({ e: '📊', t: `${c} is higher than usual this month`, p: `${eur(v)} so far. At this pace you’ll end around ${eur(proj)}, while you normally spend ${eur(avg)}.` });
+  }
+  const fun = ['Gaming', 'Going out', 'Shopping', 'Clothes'].map(c => [c, a.cats[c] || 0]).filter(x => x[1] > 15).sort((x, y) => y[1] - x[1])[0];
+  if (fun) out.push({ e: '🎯', t: `Biggest “fun” category: ${fun[0]}`, p: `About ${eur(fun[1])} a month. Try a monthly budget of ${eur(Math.round(fun[1] * .8))} in Money → Budgets. Life Hub warns you when you get close.`, save: fun[1] * .2 * 12 });
+  const untracked = a.recurring.filter(r => !r.tracked && ['Subscriptions', 'Gaming', 'Gym & health'].includes(r.cat)).slice(0, 2);
+  for (const r of untracked) out.push({ e: '🔁', t: `${r.name} looks like a subscription`, p: `About ${eur(r.avg)} in ${r.months} different months. Add it under Money → Subscriptions to get a reminder before it’s paid, and cancel it if you don’t use it.` });
+  const jobs = a.jobIn.filter(j => j.v > 0);
+  if (jobs.length >= 3) { const avgJ = jobs.reduce((x, j) => x + j.v, 0) / jobs.length; out.push({ e: '💼', t: `You earn about ${eur(avgJ)} a month from work`, p: `That’s about ${eur(avgJ * 12)} a year. Putting 25% of every pay aside gives you ${eur(avgJ * .25 * 12)} after a year.` }); }
+  const maxWd = a.wd.indexOf(Math.max(...a.wd)); if (a.wd[maxWd] > 30) out.push({ e: '📅', t: `You spend most on ${K.DAYS[maxWd]}s`, p: `${eur(a.wd[maxWd])} in the last 3 months. Plan that day a bit (bring food, set a limit) and you’ll notice it.` });
+  for (const g of K.savings.all()) {
+    const need = K.num(g.target) - K.num(g.saved); if (need <= 0) continue;
+    const per = Math.max(0, a.avgIn - a.avgOut);
+    out.push({ e: g.emoji || '🎯', t: `Saving for ${g.name}`, p: per > 0 ? `${eur(need)} to go. If you save all your leftover money (${eur(per)}/month) you reach it in about ${Math.ceil(need / per)} month${Math.ceil(need / per) > 1 ? 's' : ''}. Half of it: ${Math.ceil(need / (per / 2))} months.` : `${eur(need)} to go. You need to spend a bit less first. Try one of the tips above.` });
+  }
+  return out;
+}
+
+function render() {
+  const a = analyse();
+  let html = K.header('Money Coach', 'coach') + `<div class="tabs"><button type="button" data-tab="overview" aria-pressed="${tab === 'overview'}">Overview & tips</button><button type="button" data-tab="ask" aria-pressed="${tab === 'ask'}">Ask the coach</button></div>`;
+  if (a.tx.length < 10) {
+    html += `<div class="empty"><b>Not enough money data yet</b>Import your bank statement in <a href="../money/" style="color:var(--c)">Money</a> (🏦 Import from bank). The coach needs a few months of payments to give good tips.</div>`;
+    K.$('#app').innerHTML = html; return;
+  }
+  html += tab === 'ask' ? askHtml(a) : overviewHtml(a);
+  K.$('#app').innerHTML = html;
+  if (tab === 'ask') { const c = K.$('#chatEnd'); if (c) c.scrollIntoView(); }
+}
+function overviewHtml(a) {
+  const left = a.avgIn - a.avgOut;
+  let html = `<div class="grid2"><div class="stat"><div class="k">In / month</div><div class="v num" style="color:var(--good)">${eur(a.avgIn)}</div><div class="s">average of ${K.plural(a.full.length, 'month')}</div></div>
+    <div class="stat"><div class="k">Out / month</div><div class="v num">${eur(a.avgOut)}</div><div class="s">${left >= 0 ? eur(left) + ' left over' : eur(-left) + ' short'}</div></div></div>`;
+  html += `<div class="card"><div class="k">This month so far</div><div class="big num">${eur(a.spentNow)} spent</div><div class="muted small">At this pace you’ll spend about <b style="color:var(--ink)">${eur(a.forecast)}</b> this month (usually ${eur(a.avgOut)}).</div></div>`;
+  const max = Math.max(1, ...a.perMonth.map(p => Math.max(p.in, p.out)));
+  html += `<div class="card"><div class="k">Last 12 months · <span style="color:var(--good)">in</span> and <span style="color:var(--bad)">out</span></div><div class="bars">${a.perMonth.map(p => `<div class="col" title="${p.m}: in ${eur(p.in)}, out ${eur(p.out)}"><div class="pair"><i class="in" style="height:${p.in / max * 100}%"></i><i class="out" style="height:${p.out / max * 100}%"></i></div><span>${monthName(p.m)[0]}</span></div>`).join('')}</div></div>`;
+  const t = tips(a);
+  if (t.length) html += `<div class="sec">Tips for you</div><div class="list">${t.map(x => `<div class="tip"><span class="e">${x.e}</span><div><b>${esc(x.t)}</b><p>${esc(x.p)}</p>${x.save ? `<span class="save">Could save about ${eur(x.save)} a year</span>` : ''}</div></div>`).join('')}</div>`;
+  const cats = Object.entries(a.cats).sort((x, y) => y[1] - x[1]);
+  html += `<div class="sec">Where your money goes (average month)</div><div class="list">${cats.map(([c, v]) => {
+    const cur = a.curCats[c] || 0, proj = a.day > 5 ? cur / a.day * a.dim : null, diff = proj != null && v ? (proj - v) / v : 0;
+    return `<div class="item"><span class="body"><span class="title">${esc(c)}</span><span class="meta"><span>this month ${eur(cur)}</span>${proj != null && Math.abs(diff) > .15 ? `<span class="trend ${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '▲' : '▼'} ${Math.round(Math.abs(diff) * 100)}% pace</span>` : ''}</span></span><span class="right num">${eur(v)}</span></div>`;
+  }).join('')}</div>`;
+  html += `<div class="row-btns" style="margin-bottom:12px"><button class="btn sm" type="button" data-act="budgets">Set budgets from this</button></div>`;
+  html += `<div class="sec">Where you spend most (last 3 months)</div><div class="list">${a.topShops.map(([n, s]) => `<div class="item"><span class="body"><span class="title">${esc(n)}</span><span class="meta"><span>${s.n}×</span><span>${esc(s.cat)}</span></span></span><span class="right num">${eur(s.sum)}</span></div>`).join('')}</div>`;
+  if (a.recurring.length) html += `<div class="sec">Comes back every month</div><div class="list">${a.recurring.slice(0, 6).map(r => `<div class="item"><span class="body"><span class="title">${esc(r.name)}</span><span class="meta"><span>${r.months} months</span>${r.tracked ? '<span>✓ in Subscriptions</span>' : ''}</span></span><span class="right num">~${eur(r.avg)}</span></div>`).join('')}</div>`;
+  html += `<p class="hint">The coach works out tips from your own payments, on your phone. It’s a helper, not a professional financial adviser.</p>`;
+  return html;
+}
+
+/* ---------- ask the coach (AI) ---------- */
+function summary(a) {
+  const L = [];
+  L.push(`Months of data: ${a.months[0]} to ${a.months[a.months.length - 1]}. Today: ${K.ymd()}.`);
+  L.push(`Average per complete month (last ${a.full.length}): in ${a.avgIn.toFixed(2)} EUR, out ${a.avgOut.toFixed(2)} EUR.`);
+  L.push('Per month (in/out): ' + a.perMonth.map(p => `${p.m} ${p.in.toFixed(0)}/${p.out.toFixed(0)}`).join(', '));
+  L.push('Average spending per category per month: ' + Object.entries(a.cats).sort((x, y) => y[1] - x[1]).map(([c, v]) => `${c} ${v.toFixed(2)}`).join(', '));
+  L.push(`This month so far (day ${a.day} of ${a.dim}): ` + Object.entries(a.curCats).map(([c, v]) => `${c} ${v.toFixed(2)}`).join(', '));
+  L.push('Top places last 90 days: ' + a.topShops.map(([n, s]) => `${n} ${s.n}x ${s.sum.toFixed(2)} (${s.cat})`).join('; '));
+  L.push('Income from work per month: ' + a.jobIn.map(j => `${j.m} ${j.v.toFixed(0)}`).join(', '));
+  L.push('Repeating payments: ' + (a.recurring.map(r => `${r.name} ~${r.avg.toFixed(2)} (${r.months} months)`).join('; ') || 'none'));
+  const b = K.get('budgets', {}) || {}; if (Object.keys(b).length) L.push('Budgets set: ' + Object.entries(b).map(([c, v]) => `${c} ${v}`).join(', '));
+  const g = K.savings.all(); if (g.length) L.push('Savings goals: ' + g.map(x => `${x.name}: saved ${x.saved} of ${x.target}${x.by ? ' by ' + x.by : ''}`).join('; '));
+  const w = K.wish.all().filter(x => !x.bought); if (w.length) L.push('Wishlist: ' + w.map(x => `${x.name} ${x.price || '?'}`).join('; '));
+  const s = K.subs.all(); if (s.length) L.push('Subscriptions: ' + s.map(x => `${x.name} ${x.amount}/${x.cycle === 'yearly' ? 'year' : 'month'}`).join('; '));
+  return L.join('\n');
+}
+const SYSTEM = `You are a friendly, practical money coach inside the user's personal app "Life Hub". The user is a teenager in the Netherlands with a youth bank account, a part-time job and pocket money.
+Use their numbers below. Be specific (use euros and their categories/places), short (max ~150 words unless asked), and kind but honest. Use simple English (or Dutch if they write Dutch).
+Give practical steps (budgets, saving tricks, comparing prices, cancelling unused subscriptions). Do not recommend specific investment products, crypto, loans or buy-now-pay-later. For big decisions, suggest talking to a parent.
+Their money data:
+`;
+function askHtml(a) {
+  let html = '';
+  if (!K.aiReady()) html += `<div class="card"><div class="k">AI not set up</div><p class="muted small" style="margin:6px 0 0">The coach uses the same free Gemini key as your Workout coach. Add it in <a href="../workout/" style="color:var(--c)">Workout</a> → You → AI coach. The tips on the Overview tab work without it.</p></div>`;
+  html += `<div class="chat">${chat.length ? chat.map(m => `<div class="msg ${m.role === 'user' ? 'me' : 'ai'}">${m.role === 'user' ? esc(m.content) : K.md(m.content)}</div>`).join('') : `<div class="msg ai">Hi! I can see a summary of your money: totals per month and category, your top places and goals. Not your separate payments. What do you want to know?</div>`}<div id="chatEnd"></div></div>`;
+  html += `<div class="chips">${['How can I save €50 a month?', 'Am I spending too much on food?', 'Make me a monthly budget', 'How long until I can buy my wishlist?', 'What changed this month?'].map(q => `<button type="button" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+    <form class="quick" id="ask" autocomplete="off"><input id="q" placeholder="Ask about your money…" aria-label="Ask the coach"><button class="btn primary" type="submit">Ask</button></form>
+    ${chat.length ? '<button class="btn sm" type="button" data-act="clear">Clear chat</button>' : ''}
+    <p class="hint" style="margin-top:10px">Your question and the summary go to Google’s Gemini AI. Names of shops are included, your bank account number and separate payments are not.</p>`;
+  return html;
+}
+async function ask(q) {
+  if (!q) return;
+  chat.push({ role: 'user', content: q }); K.put('coach.chat', chat.slice(-30)); render();
+  const box = document.querySelector('.chat'); const wait = document.createElement('div'); wait.className = 'msg ai'; wait.textContent = 'Thinking…'; box.insertBefore(wait, K.$('#chatEnd')); K.$('#chatEnd').scrollIntoView();
+  try {
+    const msgs = [{ role: 'user', content: SYSTEM + summary(analyse()) }, { role: 'assistant', content: 'Got it. I have your money summary.' }].concat(chat.slice(-10));
+    const t = await K.ai(msgs);
+    chat.push({ role: 'assistant', content: t });
+  } catch (e) { chat.push({ role: 'assistant', content: '⚠️ ' + e.message }); }
+  K.put('coach.chat', chat.slice(-30)); render();
+}
+function budgetsFromAverages() {
+  const a = analyse(), b = K.get('budgets', {}) || {};
+  const sug = Object.entries(a.cats).filter(([c, v]) => v >= 5 && c !== 'Other').map(([c, v]) => [c, Math.ceil((FLEX.includes(c) ? v * .9 : v) / 5) * 5]);
+  K.form({
+    title: 'Budgets from your spending', saveLabel: 'Use these budgets',
+    fields: [{ type: 'html', k: 'x', html: `<p class="small muted" style="margin-top:-6px">Your average month, rounded up to €5. Fun categories are 10% lower to help you save. You can change them later in Money → Budgets.</p>` }]
+      .concat(sug.map(([c, v]) => ({ k: 'b_' + c, label: c + (b[c] ? ` (now ${eur(b[c])})` : ''), type: 'number', value: v }))),
+    save(v) { for (const [c] of sug) { const n = v['b_' + c]; if (n) b[c] = n; else delete b[c]; } K.put('budgets', b); K.toast('Budgets saved. See Money → Budgets.'); },
+  });
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.tab) { tab = b.dataset.tab; history.replaceState(null, '', '#' + tab); render(); }
+  else if (b.dataset.q) ask(b.dataset.q);
+  else if (b.dataset.act === 'clear') { chat.length = 0; K.put('coach.chat', []); render(); }
+  else if (b.dataset.act === 'budgets') budgetsFromAverages();
+});
+document.addEventListener('submit', e => { if (e.target.id !== 'ask') return; e.preventDefault(); const q = K.$('#q').value.trim(); ask(q); });
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Music · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .now { display: flex; gap: 14px; align-items: center; }
+  .art { width: 76px; height: 76px; border-radius: 12px; background: var(--surface-2) center / cover; flex: none; display: grid; place-items: center; font-size: 30px; }
+  .now .t { font-weight: 800; font-size: 17px; line-height: 1.25; }
+  .now .a { color: var(--muted); font-size: 14px; }
+  .eq { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; margin-right: 6px; }
+  .eq i { width: 3px; background: var(--c); border-radius: 1px; animation: eq 1s ease-in-out infinite; }
+  .eq i:nth-child(2) { animation-delay: .2s; } .eq i:nth-child(3) { animation-delay: .4s; }
+  @keyframes eq { 0%, 100% { height: 3px; } 50% { height: 12px; } }
+  .top { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .top:first-child { border-top: 0; }
+  .top .n { width: 18px; font-weight: 800; color: var(--muted); text-align: center; }
+  .top .art { width: 46px; height: 46px; border-radius: 8px; font-size: 18px; }
+  .top .body { flex: 1; min-width: 0; }
+  .top .body b, .top .body span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top .body span { font-size: 12.5px; color: var(--muted); }
+  .top .pl { font-weight: 800; text-align: right; flex: none; }
+  .top .pl small { display: block; font-size: 10.5px; color: var(--muted); font-weight: 700; }
+  .top .bar2 { height: 4px; border-radius: 4px; background: var(--c); margin-top: 5px; opacity: .8; }
+  ol.steps { padding-left: 20px; margin: 6px 0 12px; line-height: 1.6; font-size: 14px; }
+  code { background: var(--surface-2); padding: 2px 6px; border-radius: 6px; font-size: 12.5px; word-break: break-all; }
+</style>
+</head>
+<body style="--c:#1ed760">
+<div class="wrap" id="app"></div>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+const REDIRECT = location.origin + location.pathname;
+const cfg = () => Object.assign({ source: '', clientId: '', lfmUser: '', lfmKey: '' }, K.get('music', {}) || {});
+let view = K.get('music.view', 'week'), now = null, lfm = null, err = '';
+
+/* =============== Spotify (PKCE login: no secret needed) =============== */
+const SCOPES = 'user-read-currently-playing user-read-recently-played user-top-read user-read-playback-state';
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+async function spConnect() {
+  const c = cfg(); if (!c.clientId) return setup();
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  localStorage.setItem('hub.music.verifier', verifier);
+  location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({ response_type: 'code', client_id: c.clientId, scope: SCOPES, code_challenge_method: 'S256', code_challenge: challenge, redirect_uri: REDIRECT });
+}
+async function spToken(params) {
+  const r = await fetch('https://accounts.spotify.com/api/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(Object.assign({ client_id: cfg().clientId }, params)) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error_description || j.error || 'Spotify login failed (' + r.status + ')');
+  const old = K.get('music.sp', {}) || {};
+  K.put('music.sp', { access: j.access_token, refresh: j.refresh_token || old.refresh, exp: Date.now() + (j.expires_in - 60) * 1000 });
+}
+async function spFinishLogin() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('error')) { err = q.get('error') === 'access_denied' ? 'You didn’t allow access on Spotify.' : 'Spotify said: ' + q.get('error'); history.replaceState(null, '', REDIRECT); return; }
+  if (!q.get('code')) return;
+  try { await spToken({ grant_type: 'authorization_code', code: q.get('code'), redirect_uri: REDIRECT, code_verifier: localStorage.getItem('hub.music.verifier') || '' }); K.toast('Spotify connected 🎵'); }
+  catch (e) { err = e.message; }
+  localStorage.removeItem('hub.music.verifier'); history.replaceState(null, '', REDIRECT);
+}
+async function sp(path) {
+  let t = K.get('music.sp', null); if (!t || !t.refresh) throw Object.assign(new Error('Not connected'), { login: true });
+  if (Date.now() > t.exp) { await spToken({ grant_type: 'refresh_token', refresh_token: t.refresh }); t = K.get('music.sp'); }
+  const r = await fetch('https://api.spotify.com/v1/' + path, { headers: { Authorization: 'Bearer ' + t.access } });
+  if (r.status === 204) return null;
+  if (r.status === 401) { K.put('music.sp', Object.assign(t, { exp: 0 })); throw Object.assign(new Error('Spotify login expired. Connect again.'), { login: true }); }
+  if (r.status === 403) throw new Error('Spotify blocked this. Is your account Premium, and added under “User Management” in your Spotify app?');
+  if (r.status === 429) throw new Error('Spotify says: too many requests. Try again in a minute.');
+  if (!r.ok) throw new Error('Spotify error ' + r.status);
+  return r.json();
+}
+/* Spotify only remembers your last 50 songs, so Life Hub keeps its own list of every play it sees */
+async function spSync() {
+  const plays = K.get('music.plays', []) || [], last = plays.length ? plays[plays.length - 1].t : 0;
+  const j = await sp('me/player/recently-played?limit=50' + (last ? '&after=' + last : ''));
+  const add = ((j && j.items) || []).map(x => ({ t: Date.parse(x.played_at), id: x.track.id, n: x.track.name, a: x.track.artists.map(a => a.name).join(', '), ms: x.track.duration_ms, img: ((x.track.album.images || []).slice(-2)[0] || {}).url || '' }))
+    .filter(p => p.t > last).sort((a, b) => a.t - b.t);
+  if (add.length) {
+    const keep = plays.concat(add).filter(p => p.t > Date.now() - 120 * 864e5).slice(-8000);   /* about 4 months */
+    try { localStorage.setItem('hub.music.plays', JSON.stringify(keep)); } catch { localStorage.setItem('hub.music.plays', JSON.stringify(keep.slice(-3000))); }
+  }
+  K.put('music.synced', Date.now());
+  const cur = await sp('me/player/currently-playing');
+  now = cur && cur.item ? { n: cur.item.name, a: cur.item.artists.map(a => a.name).join(', '), img: ((cur.item.album.images || [])[1] || {}).url, pos: cur.progress_ms, dur: cur.item.duration_ms, playing: cur.is_playing, at: Date.now() } : null;
+}
+
+/* =============== Last.fm (free, counts every play exactly) =============== */
+async function lfmCall(params) {
+  const c = cfg();
+  const r = await fetch('https://ws.audioscrobbler.com/2.0/?' + new URLSearchParams(Object.assign({ api_key: c.lfmKey, user: c.lfmUser, format: 'json' }, params)));
+  const j = await r.json().catch(() => ({}));
+  if (j.error) throw new Error(j.error === 6 ? 'Last.fm doesn’t know that username.' : j.error === 10 ? 'That Last.fm API key isn’t right.' : 'Last.fm: ' + j.message);
+  if (!r.ok) throw new Error('Last.fm error ' + r.status);
+  return j;
+}
+async function lfmSync() {
+  const from = Math.floor(weekStartMs(view === 'last' ? -1 : 0) / 1000), to = view === 'last' ? Math.floor(weekStartMs(0) / 1000) : undefined;
+  const out = []; let page = 1, pages = 1, nowP = null;
+  do {
+    const j = await lfmCall(Object.assign({ method: 'user.getrecenttracks', limit: 200, page, from, extended: 0 }, to ? { to } : {}));
+    const rt = j.recenttracks || {}; pages = Math.min(+((rt['@attr'] || {}).totalPages || 1), 15);
+    for (const t of [].concat(rt.track || [])) {
+      const img = ((t.image || []).find(i => i.size === 'large') || {})['#text'] || '';
+      if (t['@attr'] && t['@attr'].nowplaying) { nowP = { n: t.name, a: t.artist['#text'], img, playing: true }; continue; }
+      if (t.date) out.push({ t: +t.date.uts * 1000, n: t.name, a: t.artist['#text'], img, ms: 0 });
+    }
+    page++;
+  } while (page <= pages);
+  if (view !== 'last' && !nowP) { const j = await lfmCall({ method: 'user.getrecenttracks', limit: 1 }); const t = [].concat((j.recenttracks || {}).track || [])[0]; if (t && t['@attr'] && t['@attr'].nowplaying) nowP = { n: t.name, a: t.artist['#text'], img: ((t.image || []).find(i => i.size === 'large') || {})['#text'], playing: true }; }
+  now = nowP; lfm = out.sort((a, b) => a.t - b.t);
+  /* real song lengths for the top 5, so minutes are better than a guess */
+  const durs = K.get('music.durs', {}) || {};
+  for (const s of topSongs(lfm).slice(0, 5)) { const k = s.a + '|' + s.n; if (durs[k] == null) { try { const j = await lfmCall({ method: 'track.getInfo', artist: s.a, track: s.n, autocorrect: 1 }); durs[k] = +(j.track && j.track.duration) || 0; } catch { durs[k] = 0; } } }
+  K.put('music.durs', durs);
+}
+
+/* =============== numbers =============== */
+function weekStartMs(offset) { const d = K.fromYmd(K.weekStart(K.ymd())); d.setDate(d.getDate() + 7 * offset); return d.getTime(); }
+function playsInView() {
+  const all = cfg().source === 'lastfm' ? (lfm || []) : (K.get('music.plays', []) || []);
+  const a = weekStartMs(view === 'last' ? -1 : 0), b = view === 'last' ? weekStartMs(0) : Infinity;
+  return all.filter(p => p.t >= a && p.t < b);
+}
+function msOf(p) { if (p.ms) return p.ms; const d = (K.get('music.durs', {}) || {})[p.a + '|' + p.n]; return d || 200000; }   /* unknown length: about 3:20 */
+function topSongs(plays) {
+  const m = {}; for (const p of plays) { const k = p.a + '|' + p.n; const s = m[k] = m[k] || { n: p.n, a: p.a, img: p.img, c: 0, ms: 0 }; s.c++; s.ms += msOf(p); if (!s.img) s.img = p.img; }
+  return Object.values(m).sort((x, y) => y.c - x.c || y.ms - x.ms);
+}
+function topArtists(plays) { const m = {}; for (const p of plays) { const a = p.a.split(',')[0].trim(); m[a] = (m[a] || 0) + 1; } return Object.entries(m).sort((x, y) => y[1] - x[1]); }
+const fmtMin = ms => { const m = Math.round(ms / 60000); return m >= 120 ? `${Math.floor(m / 60)}h ${K.pad(m % 60)}m` : `${m} min`; };
+
+/* =============== screens =============== */
+function render() {
+  const c = cfg();
+  let html = K.header('Music', 'music', `<button class="iconbtn" type="button" data-act="setup" aria-label="Music settings">${svg('gear')}</button>`);
+  if (err) html += `<div class="card" style="border-color:var(--bad)"><b style="color:var(--bad)">Something went wrong</b><p class="small muted" style="margin:4px 0 0">${esc(err)}</p></div>`;
+  const connected = c.source === 'spotify' ? !!(K.get('music.sp', {}) || {}).refresh : c.source === 'lastfm' && c.lfmUser && c.lfmKey;
+  if (!connected) { html += introHtml(c); K.$('#app').innerHTML = html; return; }
+  if (now) html += `<div class="card hl"><div class="k">${now.playing ? '<span class="eq"><i></i><i></i><i></i></span>Now playing' : 'Paused'}</div><div class="now" style="margin-top:8px"><div class="art" style="${now.img ? `background-image:url('${esc(now.img)}')` : ''}">${now.img ? '' : '🎵'}</div>
+    <div style="min-width:0;flex:1"><div class="t">${esc(now.n)}</div><div class="a">${esc(now.a)}</div>${now.dur ? `<div class="progress" style="margin-top:8px;height:5px"><i id="npbar" style="width:${Math.min(100, (now.pos + (now.playing ? Date.now() - now.at : 0)) / now.dur * 100)}%"></i></div>` : ''}</div></div></div>`;
+  html += `<div class="tabs"><button type="button" data-view="week" aria-pressed="${view === 'week'}">This week</button><button type="button" data-view="last" aria-pressed="${view === 'last'}">Last week</button></div>`;
+  const ps = playsInView(), total = ps.reduce((s, p) => s + msOf(p), 0), today = ps.filter(p => K.ymd(new Date(p.t)) === K.ymd()).reduce((s, p) => s + msOf(p), 0);
+  if (c.source === 'lastfm' && lfm == null) { html += `<div class="empty">Loading your listening…</div>`; K.$('#app').innerHTML = html; return; }
+  html += `<div class="grid2"><div class="stat"><div class="k">Listened ${view === 'last' ? 'last week' : 'this week'}</div><div class="v num">${fmtMin(total)}</div><div class="s">${K.plural(ps.length, 'song')}</div></div>
+    <div class="stat"><div class="k">${view === 'last' ? 'Per day' : 'Today'}</div><div class="v num">${fmtMin(view === 'last' ? total / 7 : today)}</div><div class="s">${view === 'last' ? 'average' : K.plural(ps.filter(p => K.ymd(new Date(p.t)) === K.ymd()).length, 'song')}</div></div></div>`;
+  const tops = topSongs(ps).slice(0, 5), max = tops[0] ? tops[0].c : 1;
+  html += `<div class="sec">Top 5 songs ${view === 'last' ? 'last week' : 'this week'}</div>`;
+  html += tops.length ? `<div class="list">${tops.map((s, i) => `<div class="top"><span class="n">${i + 1}</span><div class="art" style="${s.img ? `background-image:url('${esc(s.img)}')` : ''}">${s.img ? '' : '🎵'}</div>
+      <div class="body"><b>${esc(s.n)}</b><span>${esc(s.a)}</span><div class="bar2" style="width:${s.c / max * 100}%"></div></div><div class="pl num">${s.c}×<small>${fmtMin(s.ms)}</small></div></div>`).join('')}</div>`
+    : `<div class="empty" style="padding:20px">No songs yet ${view === 'last' ? 'last week' : 'this week'}.${c.source === 'spotify' ? '<br>Life Hub counts songs from the moment you connected.' : ''}</div>`;
+  const ar = topArtists(ps).slice(0, 5);
+  if (ar.length) html += `<div class="sec">Top artists</div><div class="card" style="padding:10px 14px">${ar.map(([a, n], i) => `<div style="display:flex;justify-content:space-between;padding:5px 0"><span><b style="color:var(--muted);margin-right:8px">${i + 1}</b>${esc(a)}</span><span class="num muted">${n}×</span></div>`).join('')}</div>`;
+  const recent = ps.slice(-15).reverse();
+  if (recent.length) html += `<div class="sec">Recently played</div><div class="list">${recent.map(p => `<div class="item"><span class="body"><span class="title">${esc(p.n)}</span><span class="meta"><span>${esc(p.a)}</span></span></span><span class="right small muted">${K.ymd(new Date(p.t)) === K.ymd() ? K.hm(new Date(p.t)) : K.fmtDay(K.ymd(new Date(p.t)))}</span></div>`).join('')}</div>`;
+  html += `<p class="hint">${c.source === 'spotify' ? 'Spotify only remembers your last 50 songs. Open Music at least every few hours of listening so Life Hub catches every song. Minutes are real song lengths.' : 'Play counts come from Last.fm. Minutes use the real length for your top songs and about 3:20 for others.'}</p>`;
+  K.$('#app').innerHTML = html;
+}
+function introHtml(c) {
+  return `<div class="card hl"><div class="k">Connect your music</div><div class="big">See what you listen to</div><p class="muted small" style="margin:6px 0 0">Now playing, minutes listened, and your top 5 songs this week with how many times you played them.</p></div>
+    <div class="list"><button class="item" type="button" data-act="setupLfm" style="width:100%"><span style="font-size:24px">📊</span><span class="body"><span class="title">Last.fm <span class="tag" style="color:var(--good)">free · recommended</span></span><span class="meta"><span>Works with free Spotify. Counts every play, also when Life Hub is closed.</span></span></span><span class="muted">›</span></button>
+    <button class="item" type="button" data-act="setupSp" style="width:100%"><span style="font-size:24px">🟢</span><span class="body"><span class="title">Spotify directly</span><span class="meta"><span>Needs Spotify Premium (Spotify’s rule since 2026). Counts songs while you open Life Hub every few hours.</span></span></span><span class="muted">›</span></button></div>`;
+}
+function setup(which) {
+  const c = cfg(); which = which || c.source || 'lastfm';
+  if (which === 'spotify') K.form({
+    title: 'Connect Spotify', saveLabel: 'Connect',
+    fields: [{ type: 'html', k: 'x', html: `<p class="small muted" style="margin-top:-6px">One-time setup (about 3 minutes). You need <b>Spotify Premium</b>.</p><ol class="steps">
+        <li>On a computer or phone, open <b>developer.spotify.com/dashboard</b> and log in.</li><li>Tap <b>Create app</b>. Name: Life Hub. Description: My app.</li>
+        <li>Redirect URI: <code>${esc(REDIRECT)}</code></li><li>Tick <b>Web API</b>, accept the terms, save.</li><li>Open <b>Settings</b> of the app and copy the <b>Client ID</b> here.</li></ol>` },
+      { k: 'clientId', label: 'Client ID', value: c.clientId, required: true, placeholder: '32 letters and numbers' }],
+    save(v) { K.put('music', Object.assign(c, { source: 'spotify', clientId: v.clientId.trim() })); spConnect(); },
+  });
+  else K.form({
+    title: 'Connect Last.fm', saveLabel: 'Connect',
+    fields: [{ type: 'html', k: 'x', html: `<p class="small muted" style="margin-top:-6px">One-time setup (about 3 minutes), free.</p><ol class="steps">
+        <li>Make an account on <b>last.fm</b>.</li><li>Last.fm → Settings → <b>Applications</b> → Spotify Scrobbling → <b>Connect</b>. From now on every song you play on Spotify is counted.</li>
+        <li>Open <b>last.fm/api/account/create</b>, fill in a name (Life Hub) and submit. Copy the <b>API key</b> here.</li></ol>` },
+      { k: 'lfmUser', label: 'Last.fm username', value: c.lfmUser, required: true },
+      { k: 'lfmKey', label: 'API key', value: c.lfmKey, required: true, placeholder: '32 letters and numbers' },
+      ...(c.source ? [{ type: 'html', k: 'y', html: `<button class="btn danger block" type="button" data-act="disconnect">Disconnect music</button>` }] : [])],
+    save(v) { K.put('music', Object.assign(c, { source: 'lastfm', lfmUser: v.lfmUser.trim(), lfmKey: v.lfmKey.trim() })); err = ''; lfm = null; refresh(); },
+  });
+}
+async function refresh() {
+  const c = cfg();
+  try {
+    if (c.source === 'spotify' && (K.get('music.sp', {}) || {}).refresh) await spSync();
+    else if (c.source === 'lastfm' && c.lfmUser && c.lfmKey) {
+      if (lfm == null || Date.now() - (window._lfmAt || 0) > 5 * 60000) { if (lfm == null) render(); await lfmSync(); window._lfmAt = Date.now(); }
+      else { const j = await lfmCall({ method: 'user.getrecenttracks', limit: 1 }); const t = [].concat((j.recenttracks || {}).track || [])[0];
+        now = t && t['@attr'] && t['@attr'].nowplaying ? { n: t.name, a: t.artist['#text'], img: ((t.image || []).find(i => i.size === 'large') || {})['#text'], playing: true } : null; }
+    }
+    err = '';
+  } catch (e) { err = e.message === 'Failed to fetch' ? 'No internet connection.' : e.message; if (e.login) K.put('music.sp', {}); }
+  render();
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const a = b.dataset.act;
+  if (b.dataset.view) { view = b.dataset.view; K.put('music.view', view); if (cfg().source === 'lastfm') { lfm = null; window._lfmAt = 0; refresh(); } else render(); }
+  else if (a === 'setup') setup();
+  else if (a === 'setupLfm') setup('lastfm');
+  else if (a === 'setupSp') setup('spotify');
+  else if (a === 'disconnect') { if (confirm('Disconnect your music account? Your counted songs stay.')) { K.put('music', {}); K.put('music.sp', {}); b.closest('.sheet-bg').remove(); now = null; render(); } }
+});
+(async () => { await spFinishLogin(); render(); refresh(); })();
+setInterval(() => { if (document.visibilityState === 'visible' && cfg().source) refresh(); }, 30000);
+setInterval(() => { const bar = K.$('#npbar'); if (bar && now && now.dur && now.playing) bar.style.width = Math.min(100, (now.pos + Date.now() - now.at) / now.dur * 100) + '%'; }, 1000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
+</script>
+</body>
+</html>

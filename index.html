@@ -184,6 +184,18 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
     </div>
 
     <div class="tiles">
+      <a class="tile" href="alarm/" style="--c:#9b8cff">
+        <div class="k">Alarm</div><div class="v num" id="al-v">–</div><div class="s" id="al-s">&nbsp;</div>
+      </a>
+      <a class="tile" href="music/" style="--c:#1ed760">
+        <div class="k">Music</div><div class="v num" id="mu-v">–</div><div class="s" id="mu-s">&nbsp;</div>
+      </a>
+      <a class="tile" href="anime/" style="--c:#ff7eb6">
+        <div class="k">Anime</div><div class="v num" id="an-v">–</div><div class="s" id="an-s">&nbsp;</div>
+      </a>
+    </div>
+
+    <div class="tiles">
       <a class="tile" href="sleep/" style="--c:#9b8cff">
         <div class="k">Sleep</div><div class="v num" id="sl-v">–</div><div class="s" id="sl-s">&nbsp;</div>
       </a>
@@ -525,6 +537,8 @@ function drawPlan() {
   if (overdue.length) rows.push({ time: '', color: 'var(--bad)', href: 'todo/', title: `${overdue.length} overdue to-do${overdue.length > 1 ? 's' : ''}`, late: true });
   const tmr = K.homework.all().filter(h => !h.done && h.due === K.addDays(d, 1));
   for (const h of tmr) rows.push({ time: '', color: K.subjectColor(h.subject), href: 'school/#homework', title: `${h.type === 'test' ? 'Test' : 'Due'} tomorrow: ${h.subject ? h.subject + ' — ' : ''}${h.title}` });
+  for (const a of K.anime.all().filter(K.animeAirsToday)) rows.push({ time: a.airTime || '', color: '#ff7eb6', href: 'anime/', title: `New episode: ${a.title}`, small: `ep ${(a.ep || 0) + 1}` });
+  const shave = K.shaveDue(); if (shave.length) rows.push({ time: '', color: '#56ccf2', href: 'shaving/', title: `Shave: ${shave.join(', ')}` });
   const shown = rows.slice(0, 7);
   $('#pl-list').innerHTML = shown.length ? shown.map(r => `<a class="agrow ${r.done ? 'done' : ''}" href="${esc(r.href)}" style="--dot:${r.color}">
       <span class="tm">${r.time || ''}</span><span class="b"></span><span class="tx">${esc(r.title)}${r.small ? `<small>${esc(r.small)}</small>` : ''}</span>${r.late ? '<span class="late">late</span>' : ''}</a>`).join('')
@@ -547,6 +561,16 @@ function drawPlan() {
     .filter(x => x.s >= d).sort((a, b) => a.s < b.s ? -1 : 1);
   if (cds.length) { const n = K.daysUntil(cds[0].s); $('#cd-v').innerHTML = n === 0 ? '🎉' : `${n}<small> ${n === 1 ? 'day' : 'days'}</small>`; $('#cd-s').textContent = `${cds[0].c.emoji || ''} ${cds[0].c.title}`.trim(); }
   else { $('#cd-v').textContent = '–'; $('#cd-s').textContent = 'Add one'; }
+  /* alarm, music, anime tiles */
+  const nx = K.nextAlarm();
+  if (nx) { const at = new Date(nx.at); $('#al-v').textContent = hm(at); $('#al-s').textContent = `${K.fmtDayIn(K.ymd(at))} · ${nx.a.label || 'alarm'}`; } else { $('#al-v').textContent = '–'; $('#al-s').textContent = 'no alarm set'; }
+  const mc = K.get('music', {}) || {};
+  if (mc.source === 'spotify') { const ws = K.fromYmd(K.weekStart(d)).getTime(), ps = (K.get('music.plays', []) || []).filter(p => p.t >= ws); const m = Math.round(ps.reduce((a, p) => a + (p.ms || 0), 0) / 60000); $('#mu-v').innerHTML = `${m}<small> min</small>`; $('#mu-s').textContent = `${ps.length} songs this week`; }
+  else if (mc.source === 'lastfm') { $('#mu-v').textContent = '🎧'; $('#mu-s').textContent = 'open for this week'; }
+  else { $('#mu-v').textContent = '–'; $('#mu-s').textContent = 'connect Spotify'; }
+  const watching = K.anime.all().filter(a => a.status === 'watching'), newToday = watching.filter(K.animeAirsToday);
+  $('#an-v').innerHTML = newToday.length ? `${newToday.length}<small> new</small>` : `${watching.length}<small> watching</small>`;
+  $('#an-s').textContent = newToday.length ? newToday.map(a => a.title).join(', ') : watching[0] ? `${watching[0].title} ep ${watching[0].ep || 0}` : 'add an anime';
   /* sleep tile */
   const pend = K.get('sleep.pending', null), ls = K.lastSleep(), goal = K.sleepCfg().goal;
   if (pend) { $('#sl-v').textContent = '😴'; $('#sl-s').textContent = `asleep since ${pend.slice(11)}`; }
@@ -588,6 +612,12 @@ const ICON = {
   shopping: '<path d="M5 7h14l-1.3 10.2a2 2 0 0 1-2 1.8H8.3a2 2 0 0 1-2-1.8z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/>',
   notes: '<path d="M6 3.5h9l4 4V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20z"/><path d="M14.5 3.5V8h4.5M9 12h6M9 16h6"/>',
   countdown: '<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 2.5h5"/>',
+  anime: '<rect x="3" y="5" width="18" height="13" rx="3"/><path d="M8 21h8M10.5 9.5v5l4-2.5z"/>',
+  coach: '<path d="M4 19V9M9.5 19V5M15 19v-7M20.5 19V8"/><path d="M3 21h19"/>',
+  shave: '<path d="M7 3h10v5H7z"/><path d="M12 8v13M9 21h6"/><path d="M7 5.5h10"/>',
+  clothes: '<path d="M8 3l4 2.5L16 3l5 3.5-2.5 4L16 9v12H8V9l-2.5 1.5L3 6.5z"/>',
+  music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  alarm: '<circle cx="12" cy="13" r="7.5"/><path d="M12 9.5V13l2.5 1.5M4 4.5l3-2.5M20 4.5l-3-2.5"/>',
   ai: '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM18.5 15l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/>',
 };
 const APPS = [
@@ -602,6 +632,12 @@ const APPS = [
   { id: 'shopping', name: 'Shopping', sub: 'Groceries & wishlist', c: '#6fdc8c', href: 'shopping/' },
   { id: 'money', name: 'Money', sub: 'Budget & savings', c: '#3ecf9a', href: 'money/' },
   { id: 'notes', name: 'Notes', sub: 'Notes & journal', c: '#c9b37e', href: 'notes/' },
+  { id: 'coach', name: 'Money Coach', sub: 'Tips & ask AI', c: '#3ecf9a', href: 'adviser/' },
+  { id: 'alarm', name: 'Alarms', sub: 'Night mode & school', c: '#9b8cff', href: 'alarm/' },
+  { id: 'music', name: 'Music', sub: 'Spotify stats', c: '#1ed760', href: 'music/' },
+  { id: 'anime', name: 'Anime', sub: 'Your watch list', c: '#ff7eb6', href: 'anime/' },
+  { id: 'clothes', name: 'Clothes', sub: 'Outfits & wardrobe', c: '#b48cff', href: 'clothes/' },
+  { id: 'shave', name: 'Shaving', sub: 'Days & blades', c: '#56ccf2', href: 'shaving/' },
   { id: 'ai', name: 'Assistant', sub: 'AI for everything', c: '#b48cff' },
 ];
 function drawApps() {

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shaving · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .areas { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .area { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 13px 14px; text-align: left; }
+  .area.due { border-color: color-mix(in srgb, var(--c) 55%, var(--line)); background: linear-gradient(180deg, color-mix(in srgb, var(--c) 10%, var(--surface)), var(--surface)); }
+  .area .k { font-size: 11.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .area .v { font-size: 22px; font-weight: 800; margin-top: 4px; }
+  .area .v small { font-size: 13px; color: var(--muted); font-weight: 600; }
+  .area .s { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .blade { display: flex; gap: 4px; margin-top: 8px; }
+  .blade i { flex: 1; height: 8px; border-radius: 4px; background: var(--surface-2); }
+  .blade i.u { background: var(--c); }
+  .blade.old i.u { background: var(--bad); }
+</style>
+</head>
+<body style="--c:#56ccf2">
+<div class="wrap" id="app"></div>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+const L = K.coll('shave');
+const TIPS = ['Shave after a warm shower: the hair is softer.', 'Use shaving gel or foam, never a dry razor.', 'Shave with the grain (the way the hair grows) first.', 'Rinse the blade after every few strokes.', 'Don’t press: let the razor do the work.', 'A dull blade is the #1 cause of irritation. Replace it.', 'Rinse with cold water and use an alcohol-free aftershave balm.'];
+
+function render() {
+  const c = K.shaveCfg(), log = L.all().sort((a, b) => a.date < b.date ? 1 : -1);
+  let html = K.header('Shaving', 'shave', `<button class="iconbtn" type="button" data-act="settings" aria-label="Shaving settings">${svg('gear')}</button>`);
+  html += `<button class="btn primary block" type="button" data-act="shave" style="padding:16px;font-size:16px;margin-bottom:12px">🪒 I shaved today</button>`;
+  html += `<div class="areas">${c.areas.map(a => {
+    const last = log.find(e => (e.areas || []).includes(a)), days = last ? -K.daysUntil(last.date) : null, every = +(c.every[a] || 3), due = days == null || days >= every;
+    return `<button class="area ${due ? 'due' : ''}" type="button" data-area="${esc(a)}"><div class="k">${esc(a)}</div>
+      <div class="v num">${days == null ? '–' : days === 0 ? 'Today' : days + '<small> day' + (days > 1 ? 's' : '') + '</small>'}</div>
+      <div class="s">${days == null ? 'Not logged yet' : due ? 'Time to shave' : `Next in ${every - days} day${every - days > 1 ? 's' : ''}`}</div></button>`;
+  }).join('')}</div>`;
+  /* blade */
+  const since = c.bladeSince || '', uses = log.filter(e => !since || e.date >= since).length, life = +c.bladeLife || 6;
+  const old = uses >= life;
+  html += `<div class="card"><div class="k">Blade</div><div class="big num">${uses} of ~${life} shaves</div>
+    <div class="blade ${old ? 'old' : ''}">${Array.from({ length: life }, (_, i) => `<i class="${i < uses ? 'u' : ''}"></i>`).join('')}</div>
+    <div class="muted small" style="margin-top:6px">${old ? 'Time for a new blade. A dull blade causes cuts and irritation.' : since ? `New since ${K.fmtDay(since)}.` : 'Tap “New blade” when you put a fresh one in.'}</div>
+    <div class="row-btns" style="margin-top:10px"><button class="btn sm" type="button" data-act="blade">🔄 New blade</button>${c.bladesLeft != null && c.bladesLeft !== '' ? `<span class="small muted" style="align-self:center">${c.bladesLeft} spare blade${+c.bladesLeft === 1 ? '' : 's'} left${+c.bladesLeft <= 1 ? ' · add to shopping list?' : ''}</span>` : ''}</div></div>`;
+  /* irritation */
+  const recent = log.slice(0, 8), irr = recent.filter(e => e.irr >= 1).length;
+  if (recent.length >= 3) html += `<div class="card"><div class="k">Skin</div><div class="big">${irr === 0 ? 'No irritation lately 👌' : irr >= 3 ? 'Often irritated' : 'Sometimes irritated'}</div>
+    ${irr ? `<ul class="small muted" style="margin:8px 0 0;padding-left:18px;line-height:1.6">${(old ? [TIPS[5]] : []).concat(TIPS.filter((t, i) => i !== 5).slice(0, irr >= 3 ? 5 : 3)).map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}</div>`;
+  if (log.length) {
+    const gaps = log.slice(0, 10).map((e, i, l) => l[i + 1] ? -K.daysUntil(l[i + 1].date) + K.daysUntil(e.date) : null).filter(x => x != null && x > 0);
+    if (gaps.length >= 2) html += `<p class="hint">You usually shave every ${(gaps.reduce((a, b) => a + b, 0) / gaps.length).toFixed(1)} days.</p>`;
+    html += `<div class="sec">History</div><div class="list">${log.slice(0, 40).map(e => `<button class="item" type="button" data-edit="${e.id}" style="width:100%"><span class="body"><span class="title">${esc(K.fmtDay(e.date, true))}</span>
+      <span class="meta"><span>${esc((e.areas || []).join(', '))}</span>${e.blade ? '<span>🔄 new blade</span>' : ''}${e.irr ? `<span class="soon">${e.irr >= 2 ? 'very irritated' : 'a bit irritated'}</span>` : ''}${e.note ? `<span>${esc(e.note)}</span>` : ''}</span></span></button>`).join('')}</div>`;
+  } else html += `<p class="hint">Tap “I shaved today” after shaving. Life Hub tells you when it’s time again and when to change your blade.</p>`;
+  K.$('#app').innerHTML = html;
+}
+
+function logShave(e, area) {
+  const c = K.shaveCfg(), isNew = !e;
+  e = e || { id: K.uid(), date: K.ymd(), areas: area ? [area] : c.areas.slice(0, 1), irr: 0, note: '', blade: false };
+  const f = K.form({
+    title: isNew ? 'Shaved 🪒' : 'Edit',
+    fields: [
+      { type: 'html', k: '_a', html: `<div class="f"><label>Where</label><div class="seg" data-areas>${c.areas.map(a => `<button type="button" data-a="${esc(a)}" aria-pressed="${e.areas.includes(a)}">${esc(a)}</button>`).join('')}</div></div>` },
+      { k: 'date', label: 'When', type: 'date', value: e.date },
+      { k: 'irr', label: 'Skin afterwards', type: 'seg', value: String(e.irr || 0), options: [['0', '👌 Fine'], ['1', '😬 A bit red'], ['2', '🔥 Irritated / cuts']] },
+      { k: 'blade', label: 'I used a new blade', type: 'checkbox', value: e.blade },
+      { k: 'note', label: 'Note', value: e.note, placeholder: 'e.g. new gel, shaved against the grain' },
+    ],
+    save(v) {
+      const areas = [...f.querySelectorAll('[data-areas] [aria-pressed="true"]')].map(b => b.dataset.a);
+      if (!areas.length) { K.toast('Pick at least one area'); return false; }
+      Object.assign(e, { date: v.date, areas, irr: +v.irr, blade: v.blade, note: v.note });
+      L.upsert(e);
+      if (e.blade) newBlade(e.date, true);
+      render(); if (isNew) K.toast('Logged ✓');
+    },
+    del: isNew ? null : () => { L.remove(e.id); render(); },
+  });
+  f.querySelector('[data-areas]').addEventListener('click', ev => { const b = ev.target.closest('button'); if (b) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true'); });
+}
+function newBlade(date, silent) {
+  const c = K.shaveCfg(); c.bladeSince = date || K.ymd();
+  if (c.bladesLeft !== '' && c.bladesLeft != null) {
+    c.bladesLeft = Math.max(0, +c.bladesLeft - 1);
+    if (c.bladesLeft === 0 && !K.shop.all().some(x => !x.done && /blade|mesje|scheermes/i.test(x.name))) { K.shop.upsert({ id: K.uid(), name: 'Razor blades', qty: '', cat: '🧴 Household', done: false }); K.toast('Last blade! Added razor blades to your shopping list.'); }
+  }
+  K.put('shavecfg', c); if (!silent) { render(); K.toast('New blade 🔄'); }
+}
+function settings() {
+  const c = K.shaveCfg();
+  K.form({
+    title: 'Shaving settings',
+    fields: [
+      { k: 'areas', label: 'What do you shave? (comma separated)', value: c.areas.join(', '), placeholder: 'Face, Neck' },
+      { k: 'every', label: 'Every how many days', type: 'number', value: c.every[c.areas[0]] || 3, hint: 'Used for all areas. Change one area by tapping it later.' },
+      { k: 'bladeLife', label: 'Shaves per blade', type: 'number', value: c.bladeLife, hint: 'Most blades last 5–10 shaves.' },
+      { k: 'bladesLeft', label: 'Spare blades at home', type: 'number', value: c.bladesLeft ?? '', hint: 'Optional. You get a shopping-list item when you run out.' },
+      { k: 'remindAt', label: 'Remind me on shave days at', type: 'time', value: c.remindAt, hint: 'Empty = no reminder' },
+    ],
+    save(v) {
+      const areas = v.areas.split(',').map(s => s.trim()).filter(Boolean); if (!areas.length) { K.toast('Add at least one area'); return false; }
+      const every = {}; areas.forEach(a => every[a] = c.every[a] && c.areas.includes(a) && +c.every[a] !== +c.every[c.areas[0]] ? c.every[a] : (v.every || 3));
+      K.put('shavecfg', Object.assign(c, { areas, every, bladeLife: v.bladeLife || 6, bladesLeft: v.bladesLeft === '' ? '' : v.bladesLeft, remindAt: v.remindAt }));
+      if (v.remindAt && !K.notifyOn()) K.askNotify(); render();
+    },
+  });
+}
+function areaSettings(a) {
+  const c = K.shaveCfg();
+  K.form({ title: a, saveLabel: 'Save', fields: [{ k: 'every', label: `Shave ${a.toLowerCase()} every how many days`, type: 'number', value: c.every[a] || 3 }, { type: 'html', k: 'x', html: `<button class="btn block" type="button" data-shavenow="${esc(a)}">🪒 Log a shave of ${esc(a.toLowerCase())}</button>` }],
+    save(v) { c.every[a] = v.every || 3; K.put('shavecfg', c); render(); } });
+}
+
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('button'); if (!b) return;
+  if (b.dataset.act === 'shave') logShave();
+  else if (b.dataset.act === 'settings') settings();
+  else if (b.dataset.act === 'blade') newBlade();
+  else if (b.dataset.area) areaSettings(b.dataset.area);
+  else if (b.dataset.shavenow) { b.closest('.sheet-bg').remove(); logShave(null, b.dataset.shavenow); }
+  else if (b.dataset.edit) logShave(L.byId(b.dataset.edit));
+});
+render();
+</script>
+</body>
+</html>

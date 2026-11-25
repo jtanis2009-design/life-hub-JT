@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Alarms · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .alarm { display: flex; align-items: center; gap: 12px; padding: 14px; border-top: 1px solid var(--line); }
+  .alarm:first-child { border-top: 0; }
+  .alarm .tm { font-size: 30px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .alarm.off .tm, .alarm.off .body span { color: var(--muted-2); }
+  .alarm .body { flex: 1; min-width: 0; text-align: left; }
+  .alarm .body span { display: block; font-size: 12.5px; color: var(--muted); }
+  .sw { width: 50px; height: 30px; border-radius: 99px; background: var(--surface-3); position: relative; flex: none; transition: .2s; }
+  .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: .2s; }
+  .sw[aria-checked="true"] { background: var(--c); }
+  .sw[aria-checked="true"]::after { left: 23px; }
+  .days { display: flex; gap: 6px; flex-wrap: wrap; }
+  .days button { width: 40px; height: 40px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line); font-weight: 800; font-size: 13px; color: var(--muted); }
+  .days button[aria-pressed="true"] { background: var(--c); color: #0d0f14; border-color: var(--c); }
+  #night { position: fixed; inset: 0; z-index: 85; background: #000; color: #c8c2ff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; text-align: center; }
+  #night .clock { font-size: min(26vw, 150px); font-weight: 300; letter-spacing: -.04em; font-variant-numeric: tabular-nums; line-height: 1; opacity: .75; }
+  #night .sub { font-size: 16px; opacity: .5; }
+  #night .acts { position: absolute; bottom: calc(30px + env(safe-area-inset-bottom)); display: flex; gap: 12px; }
+  #night .acts button { padding: 12px 18px; border-radius: 14px; background: #15131f; color: #8d86c4; font-weight: 700; }
+  #night.ring { animation: flash 1s infinite; color: #fff; }
+  #night.ring .clock { opacity: 1; }
+  #night .ringbtns { display: none; flex-direction: column; gap: 14px; width: min(320px, 90%); margin-top: 30px; }
+  #night.ring .ringbtns { display: flex; }
+  #night.ring .acts { display: none; }
+  #night .ringbtns button { padding: 22px; border-radius: 22px; font-size: 20px; font-weight: 800; }
+  #night .ringbtns .up { background: var(--c); color: #0d0f14; }
+  #night .ringbtns .snooze { background: #2a2740; color: #fff; }
+  @keyframes flash { 50% { background: #1c1838; } }
+</style>
+</head>
+<body style="--c:#9b8cff">
+<div class="wrap" id="app"></div>
+<button class="fab" id="fab" type="button" aria-label="New alarm"></button>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc, svg } = K;
+const AL = K.alarms;
+let night = null;   /* { lock, ctx, ringing, snoozeUntil, firedId } */
+
+function render() {
+  const list = AL.all().sort((a, b) => (K.alarmTime(a, K.ymd()) || a.time || '') < (K.alarmTime(b, K.ymd()) || b.time || '') ? -1 : 1);
+  const nx = K.nextAlarm();
+  let html = K.header('Alarms', 'alarm');
+  html += `<div class="card hl"><div class="k">Next alarm</div>${nx ? `<div class="big num">${K.fmtDay(K.ymd(new Date(nx.at)))} ${K.hm(new Date(nx.at))}</div><div class="muted small">in ${until(nx.at)} · ${esc(nx.a.label || 'Alarm')}${nx.a.smart ? ' · school alarm' : ''}</div>` : `<div class="big">No alarms on</div>`}
+    <div class="row-btns" style="margin-top:12px"><button class="btn primary" type="button" data-act="night">🌙 Start night mode</button>${nx ? `<button class="btn" type="button" data-sys="${nx.a.id}">⏰ Set in Clock app</button>` : ''}</div></div>`;
+  if (!list.length) html += `<div class="empty"><b>No alarms yet</b>Tap + for a normal alarm, or add a smart school alarm that follows your timetable.<br><br><button class="btn primary" type="button" data-act="school">🎓 Add school alarm</button></div>`;
+  else html += `<div class="list">${list.map(a => {
+    const t = a.smart ? K.alarmTime(a, nextDayWith(a)) : a.time;
+    return `<div class="alarm ${a.on ? '' : 'off'}"><button class="body" type="button" data-edit="${a.id}"><div class="tm">${t || '--:--'}</div><span>${esc(a.label || 'Alarm')} · ${a.smart ? '🎓 follows your first lesson' : daysText(a.days)}</span></button>
+      <button class="sw" type="button" role="switch" aria-checked="${!!a.on}" data-tog="${a.id}" aria-label="${a.on ? 'Turn off' : 'Turn on'} ${esc(a.label || 'alarm')}"></button></div>`;
+  }).join('')}</div>`;
+  html += `<div class="card"><div class="k">How Life Hub alarms work</div><ul class="small muted" style="margin:8px 0 0;padding-left:18px;line-height:1.6">
+    <li><b>Night mode</b>: put your phone on the charger with Life Hub open. The screen stays on (very dim), the alarm rings loudly, and your sleep is tracked.</li>
+    <li><b>Set in Clock app</b> copies the alarm into your phone’s own alarm clock, which also rings when the phone is locked. Use it as a back-up.</li>
+    <li>Without either, you only get a notification, and only if Life Hub is still running in the background.</li></ul>
+    <button class="btn sm" type="button" data-act="test" style="margin-top:10px">🔊 Test the sound</button></div>`;
+  K.$('#app').innerHTML = html;
+}
+function nextDayWith(a) { for (let i = 0; i < 8; i++) { const d = K.addDays(K.ymd(), i); if (K.alarmTime(a, d)) return d; } return K.ymd(); }
+function daysText(d) { d = d || []; if (!d.length) return 'once'; if (d.length === 7) return 'every day'; if ([1, 2, 3, 4, 5].every(x => d.includes(x)) && d.length === 5) return 'weekdays'; if (d.length === 2 && d.includes(0) && d.includes(6)) return 'weekends'; return [1, 2, 3, 4, 5, 6, 0].filter(x => d.includes(x)).map(x => K.DAYS_SHORT[x]).join(', '); }
+function until(t) { const m = Math.round((t - Date.now()) / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${K.pad(m % 60)}m`; }
+
+function edit(a, preset) {
+  const isNew = !a;
+  a = a || Object.assign({ id: K.uid(), time: '07:00', days: [1, 2, 3, 4, 5], label: '', on: true, smart: false, snooze: 9 }, preset || {});
+  const f = K.form({
+    title: isNew ? (a.smart ? 'School alarm' : 'New alarm') : 'Edit alarm',
+    fields: [
+      ...(a.smart ? [{ type: 'html', k: '_s', html: `<p class="small muted" style="margin-top:-6px">Rings ${K.sleepCfg().wakeBefore} minutes before your first lesson (change the minutes in Sleep → settings). Days without school use the time below, or no alarm if it’s empty.</p>` }] : []),
+      { k: 'time', label: a.smart ? 'Time on days without school (optional)' : 'Time', type: 'time', value: a.time, required: !a.smart },
+      ...(a.smart ? [] : [{ type: 'html', k: '_d', html: `<div class="f"><label>Repeat on</label><div class="days" data-days>${[1, 2, 3, 4, 5, 6, 0].map(d => `<button type="button" data-d="${d}" aria-pressed="${(a.days || []).includes(d)}">${K.DAYS_SHORT[d].slice(0, 2)}</button>`).join('')}</div><div class="small muted" style="margin-top:4px">No days = rings once.</div></div>` }]),
+      { k: 'label', label: 'Label', value: a.label, placeholder: a.smart ? 'School' : 'e.g. Gym, Work' },
+      { k: 'snooze', label: 'Snooze minutes', type: 'number', value: a.snooze || 9, half: true },
+      { k: 'on', label: 'On', type: 'checkbox', value: a.on, half: true },
+    ],
+    save(v) {
+      const days = a.smart ? [] : [...f.querySelectorAll('[data-days] [aria-pressed="true"]')].map(b => +b.dataset.d);
+      Object.assign(a, { time: v.time, label: v.label, snooze: v.snooze || 9, on: v.on, days });
+      if (!a.smart && !days.length) a.once = K.alarmNextOnce(a.time); else delete a.once;
+      AL.upsert(a); if (!K.notifyOn()) K.askNotify(); render();
+      const nx = K.nextAlarm(); if (nx && nx.a.id === a.id) K.toast(`Alarm in ${until(nx.at)}`);
+    },
+    del: isNew ? null : () => { AL.remove(a.id); render(); K.toast('Alarm deleted', () => { AL.upsert(a); render(); }); },
+  });
+  const dd = f.querySelector('[data-days]'); if (dd) dd.addEventListener('click', e => { const b = e.target.closest('button'); if (b) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true'); });
+}
+
+/* ---------- copy into Android's own Clock app ---------- */
+function systemAlarm(a) {
+  const t = (a.smart ? K.alarmTime(a, nextDayWith(a)) : a.time) || '07:00', [h, m] = t.split(':').map(Number);
+  const url = `intent:#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.alarm.HOUR=${h};i.android.intent.extra.alarm.MINUTES=${m};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(a.label || 'Life Hub')};end`;
+  const before = Date.now(); location.href = url;
+  setTimeout(() => { if (document.visibilityState === 'visible' && Date.now() - before < 3000) K.form({ title: 'Set it in your Clock app', saveLabel: 'OK', fields: [{ type: 'html', k: 'x', html: `<p>Your phone didn’t open the Clock app from here. Open <b>Clock</b> yourself and add an alarm for <b style="font-size:20px">${t}</b>${a.smart ? ' (school alarm: check the time each evening, it follows your timetable)' : ''}.</p>` }], save: () => {} }); }, 1500);
+}
+
+/* ---------- night mode ---------- */
+async function startNight() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)(); await ctx.resume();
+  let lock = null; try { lock = await navigator.wakeLock.request('screen'); } catch {}
+  night = { ctx, lock, ringing: false, snoozeUntil: 0, fired: {}, lastCheck: Date.now() };
+  if (!K.get('sleep.pending', null)) K.put('sleep.pending', `${K.ymd()}T${K.hm(new Date())}`);
+  const el = document.createElement('div'); el.id = 'night';
+  el.innerHTML = `<div class="clock" id="nClock"></div><div class="sub" id="nSub"></div>
+    <div class="ringbtns"><button class="up" type="button" data-act="up">☀️ I’m up</button><button class="snooze" type="button" data-act="snooze">😴 Snooze</button></div>
+    <div class="acts"><button type="button" data-act="up">☀️ I’m up</button><button type="button" data-act="stopNight">Stop night mode</button></div>`;
+  document.body.appendChild(el);
+  try { await document.documentElement.requestFullscreen(); } catch {}
+  tickNight(); night.timer = setInterval(tickNight, 1000);
+  document.addEventListener('visibilitychange', relock);
+}
+async function relock() { if (night && document.visibilityState === 'visible' && (!night.lock || night.lock.released)) { try { night.lock = await navigator.wakeLock.request('screen'); } catch {} } }
+function tickNight() {
+  if (!night) return;
+  /* look back to the last check, so an alarm is never missed when the phone paused the app for a moment */
+  const n = new Date(), nx = K.nextAlarm(Math.min(night.lastCheck, Date.now()) - 1000);
+  night.lastCheck = Date.now();
+  K.$('#nClock').textContent = K.hm(n);
+  const show = nx && nx.at <= Date.now() ? K.nextAlarm() : nx;
+  K.$('#nSub').textContent = night.ringing ? ((night.ringingAlarm || {}).label || 'Wake up!') : night.snoozeUntil ? `Snoozing until ${K.hm(new Date(night.snoozeUntil))}` : show ? `⏰ ${K.hm(new Date(show.at))} · in ${until(show.at)}` : 'No alarm set';
+  if (night.ringing) return;
+  const due = night.snoozeUntil ? (Date.now() >= night.snoozeUntil) : (nx && nx.at <= Date.now() && Date.now() - nx.at < 30 * 60000 && !night.fired[nx.key]);
+  if (due) { if (nx) night.fired[nx.key] = 1; night.snoozeUntil = 0; ring(nx && nx.a); }
+}
+function ring(a) {
+  night.ringing = true; night.ringingAlarm = a; K.$('#night').classList.add('ring');
+  K.$('#nSub').textContent = (a && a.label) || 'Wake up!';
+  const ctx = night.ctx, t0 = ctx.currentTime, g = ctx.createGain(); g.connect(ctx.destination); g.gain.setValueAtTime(0.02, t0); g.gain.linearRampToValueAtTime(0.9, t0 + 40);   /* gets louder over 40 s */
+  night.gain = g; night.oscs = [];
+  const beep = () => { if (!night || !night.ringing) return; const now = ctx.currentTime; [0, .25, .5].forEach((d, i) => { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = i === 2 ? 1046 : 880; const e = ctx.createGain(); e.gain.setValueAtTime(0, now + d); e.gain.linearRampToValueAtTime(1, now + d + .02); e.gain.linearRampToValueAtTime(0, now + d + .2); o.connect(e); e.connect(g); o.start(now + d); o.stop(now + d + .22); }); if (navigator.vibrate) navigator.vibrate([400, 200, 400]); };
+  beep(); night.beeper = setInterval(beep, 1300);
+  K.showNotification('⏰ ' + ((a && a.label) || 'Wake up!'), 'Tap to stop the alarm', location.href, 'alarm');
+}
+function stopRing() { if (!night) return; night.ringing = false; clearInterval(night.beeper); if (navigator.vibrate) navigator.vibrate(0); try { night.gain.disconnect(); } catch {} K.$('#night')?.classList.remove('ring'); }
+function stopNight(woke) {
+  if (!night) return; stopRing(); clearInterval(night.timer); try { night.lock && night.lock.release(); } catch {} try { night.ctx.close(); } catch {}
+  document.removeEventListener('visibilitychange', relock); K.$('#night')?.remove(); try { document.exitFullscreen(); } catch {}
+  const p = K.get('sleep.pending', null);
+  if (woke && p) {
+    const wake = `${K.ymd()}T${K.hm(new Date())}`, mins = Math.round((new Date(wake) - new Date(p)) / 60000);
+    if (mins > 60 && mins < 16 * 60) { K.sleepLog.upsert({ id: K.uid(), bed: p, wake, q: 3, note: 'night mode' }); localStorage.removeItem('hub.sleep.pending'); K.toast(`Good morning! You slept ${Math.floor(mins / 60)}h ${K.pad(mins % 60)}m ☀️`); }
+  } else if (!woke && p && Date.now() - new Date(p) < 10 * 60000) localStorage.removeItem('hub.sleep.pending');   /* stopped right after starting */
+  night = null; render();
+}
+function testSound() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)(), now = ctx.currentTime;
+  [0, .25, .5, 1.3, 1.55, 1.8].forEach((d, i) => { const o = ctx.createOscillator(), e = ctx.createGain(); o.frequency.value = i % 3 === 2 ? 1046 : 880; e.gain.setValueAtTime(0, now + d); e.gain.linearRampToValueAtTime(.6, now + d + .02); e.gain.linearRampToValueAtTime(0, now + d + .2); o.connect(e); e.connect(ctx.destination); o.start(now + d); o.stop(now + d + .22); });
+  setTimeout(() => ctx.close(), 2500);
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+  if (d.tog) { const a = AL.byId(d.tog); a.on = !a.on; if (a.on && !a.smart && !(a.days || []).length) a.once = K.alarmNextOnce(a.time); AL.upsert(a); render(); if (a.on) { const nx = K.nextAlarm(); if (nx) K.toast(`Next alarm in ${until(nx.at)}`); } }
+  else if (d.edit) edit(AL.byId(d.edit));
+  else if (d.sys) systemAlarm(AL.byId(d.sys));
+  else if (d.act === 'school') edit(null, { smart: true, label: 'School', time: '' });
+  else if (d.act === 'night') startNight();
+  else if (d.act === 'stopNight') stopNight(false);
+  else if (d.act === 'up') stopNight(true);
+  else if (d.act === 'snooze') { const m = +((night.ringingAlarm || {}).snooze || 9); stopRing(); night.snoozeUntil = Date.now() + m * 60000; }
+  else if (d.act === 'test') testSound();
+  else if (b.id === 'fab') AL.all().some(a => a.smart) ? edit() : K.form({ title: 'New alarm', saveLabel: 'Close', fields: [{ type: 'html', k: 'x', html: `<div class="list"><button class="item" type="button" data-pickkind="normal" style="width:100%"><span style="font-size:22px">⏰</span><span class="body title">Normal alarm</span></button><button class="item" type="button" data-pickkind="school" style="width:100%"><span style="font-size:22px">🎓</span><span class="body"><span class="title">School alarm</span><span class="meta"><span>Follows your first lesson every day</span></span></span></button></div>` }], save: () => {} });
+  else if (d.pickkind) { b.closest('.sheet-bg').remove(); d.pickkind === 'school' ? edit(null, { smart: true, label: 'School', time: '' }) : edit(); }
+});
+K.$('#fab').innerHTML = svg('plus');
+render();
+setInterval(() => { if (!night && document.visibilityState === 'visible') render(); }, 30000);
+</script>
+</body>
+</html>
