@@ -164,32 +164,70 @@ async function refreshAiring(force) {
     if (changed) render();
   } catch {}
 }
+/* "frieren everything watched" / "all watched" / "finished" / "alles gekeken" = add it as fully watched */
+const ALL_RE = /(?:^|\s+)[-,:]?\s*(?:(?:everything|all|every ep(?:isode)?s?|alles)\s+(?:watched|seen|gekeken|gezien)|(?:fully\s+)?(?:finished|completed|watched it all|uitgekeken|klaar))\s*$/i;
+const parseQ = q => { const all = ALL_RE.test(q); return { term: q.replace(ALL_RE, '').trim(), all }; };
+
+/* add (or update) an anime as fully watched, straight away */
+function addAllWatched(a) {
+  const ex = A.all().find(x => same(x, a)), before = ex ? JSON.parse(JSON.stringify(ex)) : null;
+  const x = ex || Object.assign({ id: K.uid(), score: 0, remind: false, notes: '', log: {} }, a);
+  if (!ex) delete x.status;
+  Object.assign(x, { alId: a.alId || x.alId, malId: a.malId || x.malId, image: x.image || a.image, genres: x.genres && x.genres.length ? x.genres : a.genres });
+  const aired = a.airing && a.nextEp ? a.nextEp - 1 : 0;
+  if (a.eps) { x.eps = a.eps; x.ep = a.eps; x.status = 'done'; x.finishedAt = x.finishedAt || Date.now(); }
+  else if (a.airing) { x.ep = Math.max(x.ep || 0, aired); x.status = 'watching'; x.startedAt = x.startedAt || Date.now(); }
+  else { x.status = 'done'; x.finishedAt = x.finishedAt || Date.now(); }
+  A.upsert(x);
+  const what = x.status === 'done' ? `as completed${x.eps ? ` (${x.eps} episodes)` : ''}` : `up to episode ${x.ep} (still airing)`;
+  K.toast(`${ex ? 'Updated' : 'Added'} ${x.title} ${what} ✓`, () => { if (before) A.upsert(before); else A.remove(x.id); render(); });
+  return x;
+}
+
 function searchSheet() {
   const f = K.form({
     title: 'Add anime', saveLabel: 'Add without search',
-    fields: [{ k: 'q', label: 'Search', placeholder: 'e.g. Frieren, One Piece, Solo Leveling', attrs: 'autocomplete="off" enterkeyhint="search"' }, { type: 'html', k: 'r', html: `<div id="results" style="min-height:60px"></div>` }],
-    save(v) { setTimeout(() => edit(null, { title: v.q }), 200); },
+    fields: [{ k: 'q', label: 'Search', placeholder: 'e.g. Frieren, or “Frieren everything watched”', attrs: 'autocomplete="off" enterkeyhint="search"' },
+      { type: 'html', k: 'h', html: `<p class="hint" style="margin:-6px 2px 10px">Already seen it? Add <b>everything watched</b> after the name, or tap <b>✓ All watched</b>.</p>` },
+      { type: 'html', k: 'r', html: `<div id="results" style="min-height:60px"></div>` }],
+    save(v) { const p = parseQ(v.q); if (p.all && p.term) { addAllWatched({ title: p.term, eps: 0, airing: false }); render(); return; } setTimeout(() => edit(null, { title: p.term || v.q }), 200); },
   });
   let t = null;
-  const box = f.querySelector('#results');
+  const box = f.querySelector('#results'), input = f.elements.q;
+  const done = a => { addAllWatched(a); render(); input.value = ''; box.innerHTML = ''; f._res = null; input.focus(); };
   const run = async q => {
-    if (q.length < 2) { box.innerHTML = ''; return; }
+    const p = parseQ(q);
+    if (p.term.length < 2) { box.innerHTML = ''; f._res = null; return null; }
     box.innerHTML = `<p class="muted small">Searching…</p>`;
-    const asked = q;
     try {
-      const res = await searchAnime(q);
-      if (f.elements.q.value.trim() !== asked) return;      /* you typed more meanwhile: a newer search is coming */
-      f._res = res;
-      box.innerHTML = res.length ? `<div>${res.map((a, i) => `<button class="res" type="button" data-pick="${i}"><span class="cover" style="${a.image ? `background-image:url('${esc(a.image)}')` : ''}"></span>
-        <span style="flex:1;min-width:0"><b style="display:block">${esc(a.title)}</b><span class="small muted">${[a.type, a.year, a.eps ? a.eps + ' eps' : a.airing ? 'airing' : '', a.malScore ? '★ ' + a.malScore : ''].filter(Boolean).join(' · ')}</span>
-        ${A.all().some(x => same(x, a)) ? '<span class="small" style="color:var(--c);display:block">Already on your list</span>' : ''}</span></button>`).join('')}</div>` : `<p class="muted small">Nothing found. Tap “Add without search” to add it yourself.</p>`;
-    } catch (e) { box.innerHTML = `<p class="small" style="color:var(--bad)">${esc(e.message)}</p>`; }
+      const res = await searchAnime(p.term);
+      if (input.value.trim() !== q) return null;            /* you typed more meanwhile: a newer search is coming */
+      f._res = res; f._lastQ = q;
+      box.innerHTML = (p.all && res.length ? `<p class="small" style="color:var(--c);margin:0 2px 6px;font-weight:700">Tap the right one to add it as fully watched (Enter = the top one).</p>` : '')
+        + (res.length ? `<div>${res.map((a, i) => { const on = A.all().find(x => same(x, a));
+          return `<div style="display:flex;align-items:center;gap:6px;border-top:1px solid var(--line)"><button class="res" type="button" data-pick="${i}" style="border:0;flex:1;min-width:0"><span class="cover" style="${a.image ? `background-image:url('${esc(a.image)}')` : ''}"></span>
+          <span style="flex:1;min-width:0"><b style="display:block">${esc(a.title)}</b><span class="small muted">${[a.type, a.year, a.eps ? a.eps + ' eps' : a.airing ? (a.nextEp ? `airing · ${a.nextEp - 1} out` : 'airing') : '', a.malScore ? '★ ' + a.malScore : ''].filter(Boolean).join(' · ')}</span>
+          ${on ? `<span class="small" style="color:var(--c);display:block">On your list${on.status === 'done' ? ' · completed' : ''}</span>` : ''}</span></button>
+          <button class="btn sm" type="button" data-allpick="${i}" style="flex:none" aria-label="Add ${esc(a.title)} as fully watched">✓ All watched</button></div>`; }).join('')}</div>`
+        : `<p class="muted small">Nothing found. Tap “Add without search” to add it yourself.</p>`);
+      return res;
+    } catch (e) { box.innerHTML = `<p class="small" style="color:var(--bad)">${esc(e.message)}</p>`; return null; }
   };
-  f.elements.q.addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => run(e.target.value.trim()), 450); });
-  f.elements.q.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); run(e.target.value.trim()); } });
+  input.addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => run(e.target.value.trim()), 450); });
+  input.addEventListener('keydown', async e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault(); clearTimeout(t);
+    const q = input.value.trim(), p = parseQ(q);
+    const res = f._res && f._lastQ === q ? f._res : await run(q);
+    if (p.all && res && res.length) done(res[0]);            /* "… everything watched" + Enter adds the top match */
+  });
   f.addEventListener('click', e => {
+    const all = e.target.closest('[data-allpick]');
+    if (all) { done(f._res[+all.dataset.allpick]); return; }
     const b = e.target.closest('[data-pick]'); if (!b) return;
-    const a = f._res[+b.dataset.pick], ex = A.all().find(x => same(x, a));
+    const a = f._res[+b.dataset.pick];
+    if (parseQ(input.value).all) { done(a); return; }
+    const ex = A.all().find(x => same(x, a));
     f.parentElement.remove();
     if (ex) { edit(ex); return; }
     edit(null, Object.assign(a, { status: tab === 'plan' ? 'plan' : 'watching' }));
