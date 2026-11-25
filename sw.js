@@ -1,7 +1,7 @@
 /* Life Hub offline cache for every module (travel/, workout/, ...).
    Network first so a new version shows up right away; the saved copy is used when offline or on a weak signal.
    Live data (bus times, weather, AI, cloud sync) is never cached here: other sites go straight to the network. */
-var CACHE = 'life-hub-v8';
+var CACHE = 'life-hub-v9';
 var SHELL = ['./', 'index.html', 'hub.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'lib/kit.css', 'lib/kit.js', 'lib/agenda.js', 'lib/files.js', 'lib/bankimport.js', 'lib/ai.js', 'lib/sync.js',
   'travel/', 'travel/map.js', 'travel/icons/icon.svg', 'workout/', 'workout/icon-192.png',
@@ -47,6 +47,13 @@ self.addEventListener('fetch', function (e) {
     });
   }));
 });
+/* reminders sent by the life-hub-bank job while Life Hub is closed */
+self.addEventListener('push', function (e) {
+  var d = {}; try { d = e.data ? e.data.json() : {}; } catch (x) { d = { title: 'Life Hub', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Life Hub', { body: d.body || '', tag: d.tag || undefined, data: { url: d.url || self.registration.scope },
+    icon: new URL('icons/icon-192.png', self.registration.scope).href, badge: new URL('icons/icon-192.png', self.registration.scope).href, vibrate: [200, 100, 200] }));
+});
+
 /* tapping a notification opens the app it belongs to (or focuses Life Hub) */
 self.addEventListener('notificationclick', function (e) {
   e.notification.close();

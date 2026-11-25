@@ -293,7 +293,13 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
         <button class="btn" id="ntTest" type="button">Test</button>
       </div>
     </div>
-    <p class="note">Reminders arrive while Life Hub is open or running in the background. Reminders that reach your phone when the app is fully closed come in a later update (they need a small cloud service).</p>
+    <div class="panel" style="margin-top:-2px">
+      <div class="row">
+        <div class="t"><b id="pc-state">Reminders when Life Hub is closed: off</b><small id="pc-sub">Sent by your private life-hub-bank job every 30 minutes, so they can be up to 30 minutes late. Needs cloud sync.</small></div>
+        <button class="btn" id="pcOn" type="button">Turn on</button>
+      </div>
+    </div>
+    <p class="note">While Life Hub is open (or in the background) reminders come right on time. When it’s closed, the job sends them. Alarms don’t use this: use night mode or the Clock app for those.</p>
 
     <div class="sec">Cloud sync</div>
     <div class="panel">
@@ -699,7 +705,7 @@ function drawSettings() {
   $('#wResetRow').hidden = !p;
   $('#theme').value = get('hub.theme', '');
   const last = get('hub.lastBackup', 0);
-  drawNotify(); drawSync();
+  drawNotify(); drawSync(); drawPush();
   $('#bk-last').textContent = last ? `Last backup: ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(last)}` : 'Everything from every app in one file. No backup made yet.';
 }
 async function askPin(why) {
@@ -737,6 +743,43 @@ function drawSync() {
 }
 $('#csNow').onclick = async () => { $('#csNow').textContent = 'Syncing…'; await K.sync.now(); $('#csNow').textContent = 'Sync now'; drawSync(); toast(K.sync.state().err || 'Synced ✓'); };
 document.addEventListener('hub:synced', () => { drawSync(); });
+
+/* ---------- reminders when Life Hub is closed (Web Push through the life-hub-bank job) ---------- */
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const fromB64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+async function pushSub() { try { const reg = await navigator.serviceWorker.getRegistration(); return reg && reg.pushManager ? await reg.pushManager.getSubscription() : null; } catch { return null; } }
+async function drawPush() {
+  const sub = await pushSub(), on = !!sub && K.notifyOn() && (get('lh.push', null) || {}).on;
+  $('#pc-state').textContent = `Reminders when Life Hub is closed: ${on ? 'on' : 'off'}`;
+  $('#pcOn').textContent = on ? 'Turn off' : 'Turn on';
+}
+async function pushToggle() {
+  const sub = await pushSub(), st = get('lh.push', null) || {};
+  if (sub && st.on) { try { await sub.unsubscribe(); } catch {} set('lh.push', { on: false }); toast('Turned off on this phone'); drawPush(); return; }
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return toast('This browser can’t receive notifications when closed. Use Chrome and install Life Hub.');
+  if (!K.sync || !K.sync.state().on) return toast('Log in first (Workout → You) and turn on cloud sync.');
+  if (!(await K.askNotify())) return;
+  $('#pcOn').textContent = 'Turning on…';
+  try {
+    const t = await K.sync.token(), F = `https://firestore.googleapis.com/v1/projects/workout-log-jasontanis/databases/(default)/documents/users/${t.uid}/push/`, H = { Authorization: 'Bearer ' + t.tok, 'Content-Type': 'application/json' };
+    let cfg = null; const r = await fetch(F + 'config', { headers: H }); if (r.ok) { const j = await r.json(); cfg = j.fields && j.fields.j ? JSON.parse(j.fields.j.stringValue) : null; } else if (r.status === 403) throw new Error('Your Firebase rules block this. See Cloud sync above.');
+    if (!cfg) {   /* one key pair for your account, made on this phone and kept in your own cloud */
+      const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']), jwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+      cfg = { pub: b64u(new Uint8Array([4, ...fromB64u(jwk.x), ...fromB64u(jwk.y)])), d: jwk.d, created: new Date().toISOString() };
+      const w = await fetch(F + 'config', { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { j: { stringValue: JSON.stringify(cfg) } } }) }); if (!w.ok) throw new Error('Couldn’t save to your cloud (' + w.status + ').');
+    }
+    const reg = await navigator.serviceWorker.ready;
+    let s = await reg.pushManager.getSubscription();
+    if (s && b64u(s.options.applicationServerKey || new ArrayBuffer(0)) !== cfg.pub) { await s.unsubscribe(); s = null; }
+    if (!s) s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64u(cfg.pub) });
+    const id = 'dev_' + (await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s.endpoint)).then(b => b64u(b).slice(0, 20)));
+    const w2 = await fetch(F + id, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { j: { stringValue: JSON.stringify(Object.assign(s.toJSON(), { device: navigator.userAgent.slice(0, 80), at: new Date().toISOString() })) } } }) });
+    if (!w2.ok) throw new Error('Couldn’t save to your cloud (' + w2.status + ').');
+    set('lh.push', { on: true, id }); toast('On ✓ Make sure the “Reminders” job is in your life-hub-bank repo.');
+  } catch (e) { toast(e.message || 'Couldn’t turn it on'); }
+  drawPush();
+}
+$('#pcOn').onclick = pushToggle;
 
 function drawNotify() {
   const on = K.notifyOn(), blocked = K.canNotify() && Notification.permission === 'denied';
