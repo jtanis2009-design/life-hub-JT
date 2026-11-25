@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bank connected · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>main { padding: calc(30px + env(safe-area-inset-top)) 0 40px; } code { display: block; word-break: break-all; background: var(--surface-2); padding: 12px; border-radius: 12px; font-size: 14px; margin: 10px 0; }</style>
+</head>
+<body style="--c:#3ecf9a">
+<div class="wrap"><main id="app"></main></div>
+<script>
+/* Your bank sends you back here after you approve access in the Rabo app.
+   The one-time code in the address is only useful for a few minutes, together with the Life Hub bank key. */
+const q = new URLSearchParams(location.search), app = document.getElementById('app');
+const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+if (q.get('error')) {
+  app.innerHTML = `<h1>Not connected</h1><p class="muted">The bank said: <b>${esc(q.get('error_description') || q.get('error'))}</b>. You can try again from Life Hub.</p><p><a class="btn" href="./">Back to Money</a></p>`;
+} else if (q.get('code')) {
+  try { localStorage.setItem('hub.bank.code', JSON.stringify({ code: q.get('code'), state: q.get('state') || '', at: Date.now() })); } catch {}
+  app.innerHTML = `<h1>Bank approved ✓</h1><p class="muted">Copy this code and paste it where Life Hub asks for it. It works for a few minutes only.</p>
+    <code id="code">${esc(q.get('code'))}</code><p><button class="btn primary" type="button" id="copy">Copy code</button> <a class="btn" href="./">Back to Money</a></p>`;
+  document.getElementById('copy').onclick = async () => { try { await navigator.clipboard.writeText(q.get('code')); document.getElementById('copy').textContent = 'Copied ✓'; } catch { getSelection().selectAllChildren(document.getElementById('code')); } };
+} else {
+  app.innerHTML = `<h1>Life Hub bank connection</h1><p class="muted">This page is where your bank sends you back after you approve access. Nothing to do here right now.</p><p><a class="btn" href="./">Go to Money</a></p>`;
+}
+</script>
+</body>
+</html>
