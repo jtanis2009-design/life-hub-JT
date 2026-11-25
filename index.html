@@ -261,7 +261,19 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
 
   <!-- SETTINGS -->
   <main id="v-settings" hidden>
-    <div class="sec" style="margin-top:4px">Privacy lock</div>
+    <div class="sec" style="margin-top:4px" id="account">Account</div>
+    <div class="panel" id="acct-in" hidden>
+      <div class="row"><div class="t"><b id="acct-email">Logged in</b><small id="acct-sub">Everything syncs to all your devices.</small></div><button class="btn" id="acctOut" type="button">Log out</button></div>
+    </div>
+    <form class="panel" id="acct-form" autocomplete="on" style="padding:14px 16px" hidden>
+      <p style="margin:0 0 10px;color:var(--muted);font-size:13.5px">Log in to keep everything on all your devices: your phone, your Chromebook, a new phone. It’s the same account as the Workout app.</p>
+      <input id="acctMail" type="email" autocomplete="username" placeholder="Email" aria-label="Email" style="width:100%;margin-bottom:8px">
+      <input id="acctPw" type="password" autocomplete="current-password" placeholder="Password (at least 6 characters)" aria-label="Password" style="width:100%;margin-bottom:10px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" type="submit" id="acctLogin">Log in</button><button class="btn" type="button" id="acctNew">Create account</button><button class="btn" type="button" id="acctReset" style="margin-left:auto">Forgot password</button></div>
+      <p class="small" id="acct-msg" style="margin:8px 0 0;color:var(--bad)"></p>
+    </form>
+
+    <div class="sec">Privacy lock</div>
     <div class="panel">
       <div class="row">
         <div class="t"><b id="pin-state">PIN lock is off</b><small>Asks for a PIN when you open Life Hub or any of its apps.</small></div>
@@ -719,7 +731,7 @@ function drawSettings() {
   $('#wResetRow').hidden = !p;
   $('#theme').value = get('hub.theme', '');
   const last = get('hub.lastBackup', 0);
-  drawNotify(); drawSync(); drawPush(); drawBrief();
+  drawNotify(); drawSync(); drawPush(); drawBrief(); drawAccount();
   $('#bk-last').textContent = last ? `Last backup: ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(last)}` : 'Everything from every app in one file. No backup made yet.';
 }
 async function askPin(why) {
@@ -850,13 +862,51 @@ $('#wHere').onclick = () => {
 $('#wReset').onclick = () => { localStorage.removeItem('hub.place'); drawSettings(); loadWeather(); };
 $('#theme').onchange = e => { set('hub.theme', e.target.value); applyTheme(); };
 
+/* ---------- account: one login for Life Hub and Workout, so everything is on all your devices ---------- */
+const FBKEY = 'AIzaSyDYVE8Uk3s277R3fYXH3adm6w_HMnS3EPE';
+function drawAccount() {
+  const a = get('wl_auth', null), on = !!(a && a.rt);
+  $('#acct-in').hidden = !on; $('#acct-form').hidden = on;
+  if (on) { $('#acct-email').textContent = a.email || 'Logged in'; const st = window.K && K.sync ? K.sync.state() : {}; $('#acct-sub').textContent = st.err ? st.err : st.last ? 'Everything syncs to all your devices.' : 'Syncing for the first time…'; }
+}
+function authMsg(code) {
+  return /EMAIL_EXISTS/.test(code) ? 'That email already has an account. Tap Log in.' : /INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD|EMAIL_NOT_FOUND/.test(code) ? 'Email or password isn’t right.'
+    : /INVALID_EMAIL|MISSING_EMAIL/.test(code) ? 'That doesn’t look like an email address.' : /WEAK_PASSWORD|MISSING_PASSWORD/.test(code) ? 'Use a password of at least 6 characters.'
+    : /TOO_MANY_ATTEMPTS/.test(code) ? 'Too many tries. Wait a few minutes.' : /OPERATION_NOT_ALLOWED|CONFIGURATION_NOT_FOUND/.test(code) ? 'Email login isn’t switched on in Firebase (Authentication → Sign-in method).' : 'Couldn’t log in (' + (code || 'no connection') + ').';
+}
+async function authCall(kind) {
+  const email = $('#acctMail').value.trim(), pw = $('#acctPw').value;
+  $('#acct-msg').textContent = '';
+  if (kind !== 'reset' && (!email || pw.length < 6)) { $('#acct-msg').textContent = 'Fill in your email and a password of at least 6 characters.'; return; }
+  try {
+    const url = `https://identitytoolkit.googleapis.com/v1/accounts:${kind === 'new' ? 'signUp' : kind === 'reset' ? 'sendOobCode' : 'signInWithPassword'}?key=${FBKEY}`;
+    const body = kind === 'reset' ? { requestType: 'PASSWORD_RESET', email } : { email, password: pw, returnSecureToken: true };
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(authMsg(j.error && j.error.message));
+    if (kind === 'reset') { $('#acct-msg').style.color = 'var(--good)'; $('#acct-msg').textContent = 'Check your email for a link to set a new password.'; return; }
+    set('wl_auth', { uid: j.localId, email: j.email || email, rt: j.refreshToken, it: j.idToken, exp: Date.now() + (+j.expiresIn || 3600) * 1000 });
+    try { localStorage.removeItem('wl_nologin'); localStorage.removeItem('hub.sync.state'); } catch {}
+    $('#acctPw').value = ''; drawAccount(); toast(kind === 'new' ? 'Account made. Syncing…' : 'Logged in. Getting your data…');
+    if (window.K && K.sync) { await K.sync.now(); drawAccount(); drawSync(); drawSetup(); refreshAll(); if (K.fileSync) K.fileSync(); }
+  } catch (e) { $('#acct-msg').style.color = 'var(--bad)'; $('#acct-msg').textContent = e.message; }
+}
+$('#acct-form').onsubmit = e => { e.preventDefault(); authCall('login'); };
+$('#acctNew').onclick = () => authCall('new');
+$('#acctReset').onclick = () => { if (!$('#acctMail').value.trim()) { $('#acct-msg').textContent = 'Type your email first.'; return; } authCall('reset'); };
+$('#acctOut').onclick = () => {
+  if (!confirm('Log out on this device? Your data stays here and in the cloud; it just stops syncing on this device.')) return;
+  try { localStorage.removeItem('wl_auth'); localStorage.removeItem('hub.sync.state'); localStorage.removeItem('hub.sync.sh'); localStorage.removeItem('hub.sync.da'); } catch {}
+  drawAccount(); drawSync(); drawSetup(); toast('Logged out on this device');
+};
+
 /* ---------- set-up checklist ---------- */
 function setupItems() {
   const auth = get('wl_auth', null), st = window.K && K.sync ? K.sync.state() : {};
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   return [
+    ['☁️', 'Log in to sync all your devices', 'Settings → Account (same login as Workout)', !!(auth && auth.rt), '#settings'],
     ['📲', 'Install Life Hub', installEvt ? 'Tap to install it on your home screen' : 'So it opens like an app (tap for how)', !!standalone, 'install'],
-    ['☁️', 'Log in for cloud sync', 'Workout → You: backs up everything', !!(auth && auth.rt), 'workout/'],
     ['🔄', 'Cloud sync working', st.err ? st.err : 'Settings → Cloud sync', !!(auth && auth.rt && st.last && !st.err), '#settings'],
     ['🔔', 'Allow notifications', 'For reminders, homework and alarms', 'Notification' in window && Notification.permission === 'granted', 'notify'],
     ['🌙', 'Reminders when closed', 'Settings → Reminders when Life Hub is closed', !!(get('lh.push', null) || {}).on, '#settings'],

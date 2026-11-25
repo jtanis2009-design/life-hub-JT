@@ -41,7 +41,7 @@ const COLORS = [['black', '#1b1b1b'], ['white', '#f2f2f2'], ['grey', '#8a8f98'],
 let tab = K.get('clothes.tab', 'today'), filter = '', pick = new Set(), weather = null;
 const thumbs = {};
 
-async function photo(id) { if (!id) return ''; if (thumbs[id] !== undefined) return thumbs[id]; thumbs[id] = (await K.files.thumb(id)) || ''; return thumbs[id]; }
+async function photo(id) { if (!id) return ''; if (thumbs[id]) return thumbs[id]; const u = await K.files.thumb(id); if (u) thumbs[id] = u; return u || ''; }   /* not cached when missing: it may still arrive from the cloud */
 async function paintPhotos() { for (const el of document.querySelectorAll('[data-photo]')) { const u = await photo(el.dataset.photo); if (u) { el.style.backgroundImage = `url(${u})`; el.textContent = ''; } } }
 const wears = it => O.all().filter(o => (o.items || []).includes(it.id)).map(o => o.date).sort();
 const lastWorn = it => { const w = wears(it); return w[w.length - 1] || ''; };
