@@ -81,7 +81,7 @@ function monthHtml() {
   const out = tx.filter(t => t.type !== 'in').reduce((a, t) => a + K.num(t.amount), 0), inn = tx.filter(t => t.type === 'in').reduce((a, t) => a + K.num(t.amount), 0);
   let html = `<form class="quick" id="quick" autocomplete="off"><input id="q" placeholder="5,50 kebab  ·  +20 pocket money" aria-label="Quick add spending or income" inputmode="text"><button class="btn primary" type="submit" aria-label="Add">${svg('plus', 'width="18" height="18"')}</button></form>
     <div class="mhead"><button class="iconbtn" type="button" data-m="-1" aria-label="Previous month">${svg('left')}</button><h2>${K.MONTHS[m - 1]} ${y}</h2><button class="iconbtn" type="button" data-m="1" aria-label="Next month">${svg('right')}</button></div>
-    <div class="row-btns" style="margin:-2px 0 12px"><button class="btn sm" type="button" data-act="import">🏦 Import from bank</button><button class="btn sm" type="button" data-act="addReceipt">🧾 Add receipt</button>${lastImport()}</div>
+    <div class="row-btns" style="margin:-2px 0 12px"><button class="btn sm" type="button" data-act="import">🏦 Import from bank</button><button class="btn sm" type="button" data-act="addReceipt">🧾 Add receipt</button>${lastImport()}</div>${autoBankLine()}
     <div class="grid2"><div class="stat"><div class="k">Spent</div><div class="v num">${eur(out)}</div><div class="s">${tx.filter(t => t.type !== 'in').length} payments</div></div>
     <div class="stat"><div class="k">Came in</div><div class="v num in">${eur(inn)}</div><div class="s">${inn - out >= 0 ? 'Left over ' + eur(inn - out) : 'Short ' + eur(out - inn)}</div></div></div>`;
   if (out) {
@@ -296,6 +296,73 @@ function showImport({ bank, items }) {
   f.addEventListener('click', e => { const b = e.target.closest('[data-all]'); if (b) f.querySelectorAll('[data-row]').forEach(c => c.checked = b.dataset.all === '1'); });
 }
 
+/* ================= automatic bank sync =================
+   A private GitHub job (life-hub-bank) puts new Rabobank payments in your Life Hub cloud
+   (the Firebase account you log in with in Workout): users/{uid}/bank. Picked up here. */
+const FB = { key: 'AIzaSyDYVE8Uk3s277R3fYXH3adm6w_HMnS3EPE', docs: 'https://firestore.googleapis.com/v1/projects/workout-log-jasontanis/databases/(default)/documents' };
+let bankMeta = K.get('bank.meta', null), bankBusy = false;
+function autoBankLine() {
+  const m = bankMeta;
+  if (!m || !m.session) return '';
+  const left = m.validUntil ? Math.floor((Date.parse(m.validUntil) - Date.now()) / 864e5) : null;
+  const last = m.lastSync ? Math.round((Date.now() - Date.parse(m.lastSync)) / 36e5) : null;
+  if (m.error === 'expired' || (left != null && left < 0)) return `<div class="card" style="border-color:var(--bad);padding:10px 14px;margin-bottom:12px"><b style="color:var(--bad)">🏦 Bank access ended</b><div class="small muted">Renew it: GitHub → life-hub-bank → Actions → <b>Connect bank</b> → Run workflow.</div></div>`;
+  return `<p class="small muted" style="margin:-4px 2px 12px">🏦 Automatic: ${last == null ? 'waiting for the first sync' : last < 1 ? 'updated less than an hour ago' : `updated ${last} h ago`}${left != null ? ` · access for ${left} more day${left === 1 ? '' : 's'}` : ''}${left != null && left <= 14 ? ' · <b style="color:var(--warn)">renew soon</b>' : ''}</p>`;
+}
+async function fbToken() {
+  const a = K.raw('wl_auth', null); if (!a || !a.rt) return null;
+  if (a.it && Date.now() < a.exp - 60000) return { uid: a.uid, tok: a.it };
+  const r = await fetch('https://securetoken.googleapis.com/v1/token?key=' + FB.key, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(a.rt) });
+  if (!r.ok) return null;
+  const d = await r.json(); a.it = d.id_token; a.rt = d.refresh_token || a.rt; a.exp = Date.now() + (+d.expires_in || 3600) * 1000;
+  try { localStorage.setItem('wl_auth', JSON.stringify(a)); } catch {}
+  return { uid: a.uid, tok: a.it };
+}
+async function pullBank() {
+  if (bankBusy) return; bankBusy = true;
+  try {
+    const t = await fbToken(); if (!t) return;
+    const H = { Authorization: 'Bearer ' + t.tok, 'Content-Type': 'application/json' };
+    const mr = await fetch(`${FB.docs}/users/${t.uid}/bankmeta/state`, { headers: H });
+    if (!mr.ok) return;                                   /* not connected (yet) */
+    const mj = await mr.json(); bankMeta = mj.fields && mj.fields.j ? JSON.parse(mj.fields.j.stringValue) : null; K.put('bank.meta', bankMeta);
+    let cur = K.get('bank.cursor', ''), got = [];
+    for (let page = 0; page < 20; page++) {
+      const q = { from: [{ collectionId: 'bank' }], orderBy: [{ field: { fieldPath: 's' }, direction: 'ASCENDING' }], limit: 300 };
+      if (cur) q.where = { fieldFilter: { field: { fieldPath: 's' }, op: 'GREATER_THAN', value: { timestampValue: cur } } };
+      const r = await fetch(`${FB.docs}/users/${t.uid}:runQuery`, { method: 'POST', headers: H, body: JSON.stringify({ structuredQuery: q }) });
+      if (!r.ok) break;
+      const rows = (await r.json()).filter(x => x.document);
+      for (const x of rows) { const f = x.document.fields; if (f.j) got.push(JSON.parse(f.j.stringValue)); if (f.s) cur = f.s.timestampValue; }
+      if (rows.length < 300) break;
+    }
+    const added = got.length ? mergeBank(got) : 0;
+    K.put('bank.cursor', cur);
+    if (added) K.toast(`🏦 ${added} new payment${added > 1 ? 's' : ''} from your bank`);
+    render();
+  } catch {} finally { bankBusy = false; }
+}
+/* add bank payments that aren't in Life Hub yet. Already there = same direction and amount within 3 days
+   (from a PDF/CSV import or typed in yourself); each existing payment can only match once. */
+function mergeBank(items) {
+  const list = K.money.all(), own = new Set((K.get('money.ownIbans', []) || []).map(x => x.toUpperCase()));
+  const seen = new Set(list.map(t => t.eb).filter(Boolean)), skipped = new Set(K.get('bank.skipped', []) || []);
+  const free = list.filter(t => !t.eb);
+  let n = 0;
+  for (const it of items.sort((a, b) => a.date < b.date ? -1 : 1)) {
+    if (seen.has(it.id) || skipped.has(it.id)) continue;
+    const c = K.bank.clean(it.party, it.desc);
+    const tx = { date: it.date, amount: it.amount, type: it.type, name: c.name, desc: c.desc, counter: it.counter || '' };
+    if (K.bank.isTransfer(tx, own)) { skipped.add(it.id); continue; }
+    const i = free.findIndex(t => t.type === it.type && Math.abs(K.num(t.amount) - it.amount) < 0.005 && Math.abs(K.daysUntil(t.date) - K.daysUntil(it.date)) <= 3);
+    if (i >= 0) { free[i].eb = it.id; free.splice(i, 1); seen.add(it.id); continue; }
+    list.push(K.stamp({ id: K.uid(), type: it.type, amount: it.amount, date: it.date, note: c.name, party: c.name, desc: c.desc, cat: catFor(it.type, c.name, c.desc), src: 'bank', eb: it.id, bank: K.bank.key(tx), created: Date.now() }));
+    seen.add(it.id); n++;
+  }
+  K.money.save(list); K.put('bank.skipped', [...skipped].slice(-3000));
+  return n;
+}
+
 /* ================= receipts ================= */
 let rq = '';
 function receiptsHtml() {
@@ -419,7 +486,8 @@ document.addEventListener('submit', e => { if (e.target.id !== 'quick') return; 
 K.$('#fab').innerHTML = svg('plus');
 render();
 checkInbox();
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkInbox(); });
+pullBank();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { checkInbox(); pullBank(); } });
 </script>
 </body>
 </html>

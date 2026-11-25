@@ -16,6 +16,7 @@ My all-in-one everyday app. One icon on my phone for travel, workouts and (soon)
 - **Shopping** (`shopping/`): groceries sorted by aisle automatically, plus a wishlist with savings progress.
 - **Notes** (`notes/`): notes with pins, tags, checklists and search, plus a daily journal with a mood chart.
 - **Money** (`money/`): quick add ("5,50 kebab", "+20 pocket money"), categories, monthly budgets, savings goals, subscriptions with reminders, and **bank import**: import your transactions file from ING, Rabobank, ABN AMRO, bunq (or most other Dutch banks), or a Rabobank **PDF statement** (Rekeningafschrift), also straight from WhatsApp or Gmail via Share. Shops get the right category (and remember your corrections), payments already in Life Hub are skipped, and moves to your own savings are left out.
+- **Automatic bank sync**: a private GitHub job (`life-hub-bank`) fetches new Rabobank payments through Enable Banking 4 times a day and puts them in my Life Hub cloud; Money adds them when opened, without doubles and without savings moves.
 - **Receipts** (Money → Receipts): keep PDFs, photos of paper receipts and links to online orders, linked to the payment, with warranty dates. Share a PDF or screenshot from any Android app to **Life Hub** to save it.
 - **Money Coach** (`adviser/`): tips worked out from your own payments (savings rate, small buys, repeating payments, busiest day, goals), budgets from your averages, and an AI coach that only gets a summary of your numbers.
 - **Anime** (`anime/`): watch list with MyAnimeList search (covers, episodes, airing day in your time), +1 episode, scores, new-episode reminders, stats.
@@ -26,7 +27,7 @@ My all-in-one everyday app. One icon on my phone for travel, workouts and (soon)
 - **Privacy lock**: a PIN for the whole app, with an extra lock on Notes and Money.
 - **Backup**: one file with everything, restore it any time. Logins and the AI key are left out.
 - **Reminders**: phone notifications for to-dos, homework, tests, events, birthdays, habits, bedtime and subscriptions while Life Hub is open or in the background.
-- **Coming next**: the AI assistant for everything, automatic bank sync, cloud sync for every app, and reminders when the app is fully closed.
+- **Coming next**: the AI assistant for everything, cloud sync for every app, and reminders when the app is fully closed.
 
 ## How it's built
 
