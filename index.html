@@ -323,9 +323,9 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       <p style="margin:0 0 10px;color:var(--muted);font-size:13.5px" id="ai-state">The Assistant and the Workout coach use a free Google Gemini key.</p>
       <ol id="ai-steps" style="margin:0 0 10px;padding-left:20px;color:var(--muted);font-size:13.5px;line-height:1.6">
         <li>Open <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700">aistudio.google.com/app/apikey</a> and log in with a Google account.</li>
-        <li>Tap <b>Create API key</b> and copy it (it starts with <b>AIza</b>).</li>
+        <li>Tap <b>Create API key</b> and copy it (it starts with <b>AIza</b> or <b>AQ.</b>).</li>
         <li>Paste it here and tap <b>Save</b>.</li></ol>
-      <div style="display:flex;gap:8px"><input id="aiKey" type="password" autocomplete="off" placeholder="Paste your key (AIza…)" aria-label="Gemini API key" style="flex:1;min-width:0"><button class="btn primary" id="aiSave" type="button">Save</button></div>
+      <div style="display:flex;gap:8px"><input id="aiKey" type="password" autocomplete="off" placeholder="Paste your key (AIza… or AQ.…)" aria-label="Gemini API key" style="flex:1;min-width:0"><button class="btn primary" id="aiSave" type="button">Save</button></div>
       <div style="display:flex;gap:8px;margin-top:8px"><button class="btn" id="aiTest" type="button">Test</button><button class="btn danger" id="aiDel" type="button" hidden>Remove key</button></div>
       <p class="small" id="ai-msg" style="margin:8px 0 0"></p>
     </div>
@@ -927,11 +927,11 @@ $('#acctOut').onclick = () => {
 function drawAI() {
   const k = localStorage.getItem('wl_aikey') || '';
   $('#ai-state').textContent = k ? '✓ AI key saved. The Assistant and the Workout coach can use it.' : 'The Assistant and the Workout coach use a free Google Gemini key.';
-  $('#ai-steps').hidden = !!k; $('#aiDel').hidden = !k; $('#aiKey').placeholder = k ? 'Key saved (•••• ' + k.slice(-4) + '). Paste a new one to replace it.' : 'Paste your key (AIza…)';
+  $('#ai-steps').hidden = !!k; $('#aiDel').hidden = !k; $('#aiKey').placeholder = k ? 'Key saved (•••• ' + k.slice(-4) + '). Paste a new one to replace it.' : 'Paste your key (AIza… or AQ.…)';
 }
 $('#aiSave').onclick = () => {
   const k = $('#aiKey').value.trim().replace(/\s+/g, '');
-  if (!/^AIza[\w-]{20,}$/.test(k)) { $('#ai-msg').style.color = 'var(--bad)'; $('#ai-msg').textContent = 'That doesn’t look like a Gemini key. It starts with AIza and is about 39 characters.'; return; }
+  if (!/^(AIza[\w-]{20,}|AQ\.[\w.-]{20,})$/.test(k)) { $('#ai-msg').style.color = 'var(--bad)'; $('#ai-msg').textContent = 'That doesn’t look like a Gemini key. It starts with AIza or AQ. and has no spaces.'; return; }
   try { localStorage.setItem('wl_aikey', k); localStorage.removeItem('wl_aimodel'); } catch {}
   set('hub.aikey', k); try { localStorage.setItem('hub.changedAt', String(Date.now())); document.dispatchEvent(new CustomEvent('hub:change', { detail: 'aikey' })); } catch {}
   $('#aiKey').value = ''; $('#ai-msg').style.color = 'var(--good)'; $('#ai-msg').textContent = 'Saved. Tap Test to check it works.'; drawAI(); drawSetup();

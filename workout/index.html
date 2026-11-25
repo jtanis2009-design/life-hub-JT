@@ -3427,6 +3427,15 @@ function muscleCard(ses){
    and a built-in rule engine that needs nothing at all. */
 function cleanKey(k){ return String(k||'').replace(/^\s*(key\s*[:=]\s*)/i,'').replace(/["'`\s]/g,''); }
 function aiKey(){ try{ return cleanKey(localStorage.getItem('wl_aikey')); }catch(e){ return ''; } }
+/* key in a header; if Google says no (some newer "AQ." keys), try it in the address instead and remember that */
+function gemFetch(url,opts){ opts=opts||{}; var k=aiKey(), mode=''; try{ mode=localStorage.getItem('wl_aiauth')||''; }catch(e){}
+  var viaUrl=function(){ return fetch(url+(url.indexOf('?')>=0?'&':'?')+'key='+encodeURIComponent(k),Object.assign({},opts,{headers:Object.assign({},opts.headers)})); };
+  if(mode==='url') return viaUrl();
+  return fetch(url,Object.assign({},opts,{headers:Object.assign({'x-goog-api-key':k},opts.headers)})).then(function(r){
+    if(r.status!==401&&r.status!==403) return r;
+    return viaUrl().then(function(r2){ if(r2.ok){ try{ localStorage.setItem('wl_aiauth','url'); }catch(e){} return r2; } return r; },function(){ return r; });
+  });
+}
 function aiMode(){ return S.sample?'claude':(aiKey()?'gemini':'rules'); }
 var GEM='https://generativelanguage.googleapis.com/v1beta/';
 function blobB64(b){
@@ -3443,7 +3452,7 @@ function blobB64(b){
 var GEM_PREF=['gemini-flash-latest','gemini-2.5-flash','gemini-flash-lite-latest','gemini-2.5-flash-lite','gemini-2.0-flash','gemini-2.0-flash-lite'];
 var GEM_AVOID=/embedding|image|tts|audio|live|vision|omni|computer|robotics|pro|preview|exp|thinking|aqa|learnlm|nano|veo|lyria|imagen/;
 function geminiCandidates(){
-  return fetch(GEM+'models?pageSize=200',{headers:{'x-goog-api-key':aiKey()}})
+  return gemFetch(GEM+'models?pageSize=200')
     .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(j){
       if(!r.ok){ var e=new Error((j&&j.error&&j.error.message)||('HTTP '+r.status)); e.status=r.status; e.gstatus=j&&j.error&&j.error.status; throw e; }
       return j; }); })
@@ -3484,8 +3493,8 @@ function geminiCall(msgs,opts){
     var body={contents:contents}; if(opts.json) body.generationConfig={responseMimeType:'application/json'};
     if(nlOn()) body.systemInstruction={parts:[{text:NL_AI}]};
     if(opts.tools&&opts.tools.length){ body.tools=[{functionDeclarations:opts.tools}]; body.toolConfig={functionCallingConfig:{mode:'AUTO'}}; }
-    return fetch(GEM+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal:ctl?ctl.signal:undefined,
-        headers:{'Content-Type':'application/json','x-goog-api-key':aiKey()},body:JSON.stringify(body)})
+    return gemFetch(GEM+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal:ctl?ctl.signal:undefined,
+        headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
       .then(function(r){ clearTimeout(tm); return r.json().catch(function(){ return {}; }).then(function(j){
         if(!r.ok) throw gemErrInfo(r,j);
         var cand=(j.candidates||[])[0]||{}, c=cand.content;
