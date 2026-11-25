@@ -295,6 +295,24 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
     </div>
     <p class="note">Reminders arrive while Life Hub is open or running in the background. Reminders that reach your phone when the app is fully closed come in a later update (they need a small cloud service).</p>
 
+    <div class="sec">Cloud sync</div>
+    <div class="panel">
+      <div class="row">
+        <div class="t"><b id="cs-state">Cloud sync is off</b><small id="cs-sub">Log in in Workout → You to back up everything and use Life Hub on more devices.</small></div>
+        <button class="btn" id="csNow" type="button">Sync now</button>
+      </div>
+    </div>
+    <div class="note" id="cs-rules" hidden>Your Firebase database rules only allow workout data. In the <b>Firebase console → Firestore Database → Rules</b>, replace the rules with:
+      <pre style="white-space:pre-wrap;background:var(--surface-2);padding:10px;border-radius:10px;font-size:12px;margin:8px 0 0">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null &amp;&amp; request.auth.uid == uid;
+    }
+  }
+}</pre></div>
+    <p class="note">Syncs everything in Life Hub per item, so changes on two devices both survive. Your workouts sync through the Workout app. Receipt files and clothing photos stay on this device: they’re in the backup file.</p>
+
     <div class="sec">Backup</div>
     <div class="panel">
       <div class="row">
@@ -681,7 +699,7 @@ function drawSettings() {
   $('#wResetRow').hidden = !p;
   $('#theme').value = get('hub.theme', '');
   const last = get('hub.lastBackup', 0);
-  drawNotify();
+  drawNotify(); drawSync();
   $('#bk-last').textContent = last ? `Last backup: ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(last)}` : 'Everything from every app in one file. No backup made yet.';
 }
 async function askPin(why) {
@@ -707,6 +725,18 @@ $('#pinAfter').onchange = e => { Hub.setLockAfter(+e.target.value); toast('Saved
 $('#pinOff').onclick = async () => { if (!(await askPin('Turning the PIN lock off.'))) return; Hub.clearPin(); drawSettings(); toast('PIN lock is off'); };
 $('#lockBtn').onclick = () => Hub.lockNow();
 $('#pinPriv').onchange = e => { Hub.lockPrivate(e.target.checked); toast('Saved'); };
+
+function drawSync() {
+  if (!window.K || !K.sync) { setTimeout(drawSync, 500); return; }
+  const s = K.sync.state(), p = K.sync.pending();
+  $('#cs-state').textContent = !s.on ? 'Cloud sync is off' : s.err ? 'Cloud sync has a problem' : 'Cloud sync is on';
+  $('#cs-sub').textContent = !s.on ? 'Log in in Workout → You to back up everything and use Life Hub on more devices.'
+    : s.err ? s.err : `${s.email ? s.email + ' · ' : ''}${s.last ? 'last synced ' + new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }).format(s.last) : 'not synced yet'}${p ? ` · ${p} change${p > 1 ? 's' : ''} waiting` : ''}`;
+  $('#cs-rules').hidden = !(s.err && /rules/i.test(s.err));
+  $('#csNow').hidden = !s.on;
+}
+$('#csNow').onclick = async () => { $('#csNow').textContent = 'Syncing…'; await K.sync.now(); $('#csNow').textContent = 'Sync now'; drawSync(); toast(K.sync.state().err || 'Synced ✓'); };
+document.addEventListener('hub:synced', () => { drawSync(); });
 
 function drawNotify() {
   const on = K.notifyOn(), blocked = K.canNotify() && Notification.permission === 'denied';
