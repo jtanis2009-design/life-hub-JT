@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>Assistant · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  body { padding-bottom: calc(150px + env(safe-area-inset-bottom)); }
+  .chat { display: flex; flex-direction: column; gap: 10px; }
+  .msg { padding: 11px 14px; border-radius: 16px; max-width: 88%; line-height: 1.5; font-size: 15px; overflow-wrap: anywhere; }
+  .msg.me { align-self: flex-end; background: var(--c); color: #0d0f14; border-bottom-right-radius: 5px; }
+  .msg.ai { align-self: flex-start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .msg.ai ul { margin: 6px 0; padding-left: 18px; }
+  .msg.err { border-color: var(--bad); }
+  .preview { align-self: stretch; background: var(--surface); border: 2px solid var(--c); border-radius: 16px; padding: 12px 14px; }
+  .preview .k { font-size: 11.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .preview ul { margin: 8px 0 12px; padding-left: 0; list-style: none; }
+  .preview li { padding: 5px 0; border-top: 1px solid var(--line); }
+  .preview li:first-child { border-top: 0; }
+  .preview.done { border-color: var(--line); opacity: .8; }
+  .dots::after { content: "…"; animation: dots 1.2s steps(3) infinite; display: inline-block; width: 1.2em; overflow: hidden; vertical-align: bottom; }
+  @keyframes dots { 0% { width: 0; } 100% { width: 1.2em; } }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-top: 1px solid var(--line); padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); z-index: 40; }
+  .bar .wrap { display: flex; gap: 8px; align-items: flex-end; }
+  .bar textarea { flex: 1; min-height: 46px; max-height: 140px; resize: none; background: var(--surface); border-radius: 16px; padding: 12px 14px; }
+  .bar button { width: 46px; height: 46px; border-radius: 14px; flex: none; display: grid; place-items: center; font-size: 18px; }
+  .bar .send { background: var(--c); color: #0d0f14; font-weight: 800; }
+  .bar .mic { background: var(--surface); border: 1px solid var(--line); }
+  .bar .mic.on { background: var(--bad); color: #fff; border-color: var(--bad); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .6; } }
+  .sugg { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+  .sugg button { padding: 8px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 13.5px; font-weight: 600; color: var(--muted); text-align: left; }
+</style>
+</head>
+<body style="--c:#b48cff">
+<div class="wrap" id="app"></div>
+<form class="bar" id="form" autocomplete="off"><div class="wrap">
+  <button class="mic" type="button" id="mic" aria-label="Speak">🎤</button>
+  <textarea id="q" rows="1" placeholder="Ask or tell me anything…" aria-label="Message"></textarea>
+  <button class="send" type="submit" aria-label="Send">➜</button>
+</div></form>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script src="../lib/ai.js"></script>
+<script>
+const { esc } = K;
+const chat = K.get('ai.chat', []) || [];
+let busy = false, pending = null;
+const OUT_CATS = ['Food & drinks', 'Groceries', 'Transport', 'Going out', 'Clothes', 'Gaming', 'Subscriptions', 'Gym & health', 'School', 'Shopping', 'Gifts', 'Tikkie & friends', 'Cash', 'Other'];
+const IN_CATS = ['Job', 'Pocket money', 'Gift', 'Sold something', 'Refund', 'Tikkie & friends', 'Other'];
+
+/* =================== tools the AI can use =================== */
+const S = (d, extra = {}) => Object.assign({ type: 'STRING', description: d }, extra);
+const N = d => ({ type: 'NUMBER', description: d }), Bo = d => ({ type: 'BOOLEAN', description: d });
+const obj = (props, req = []) => ({ type: 'OBJECT', properties: props, required: req });
+const TOOLS = [
+  { name: 'get_day', description: 'Everything on one day: lessons, events, birthdays, homework and tests, to-dos, workout, countdowns, holidays. Also overdue to-dos when the day is today.', parameters: obj({ date: S('YYYY-MM-DD') }, ['date']) },
+  { name: 'get_week', description: 'A short overview of the next 7 days starting at a date (default today).', parameters: obj({ from: S('YYYY-MM-DD, optional') }) },
+  { name: 'get_status', description: 'Overview right now: open to-dos, next lesson, next alarm, habits today and streaks, countdowns, shopping list, money this month and budgets, last night’s sleep, anime being watched, savings goals.', parameters: obj({}) },
+  { name: 'search', description: 'Search to-dos, homework, tests, grades, events, notes, countdowns, shopping list, wishlist and anime by words.', parameters: obj({ query: S('words to look for') }, ['query']) },
+  { name: 'money_summary', description: 'Money in and out between two dates, per category, top places and biggest payments.', parameters: obj({ from: S('YYYY-MM-DD'), to: S('YYYY-MM-DD'), category: S('optional category') }, ['from', 'to']) },
+  { name: 'add_task', description: 'Add a to-do / reminder.', parameters: obj({ title: S('what to do'), due: S('YYYY-MM-DD, optional'), time: S('HH:MM, optional'), remind: Bo('phone reminder at the time (default true when a time is given)'), list: S('list name e.g. Inbox, School, Personal, Gym'), priority: N('0 normal, 1 medium, 2 high, 3 urgent'), repeat: S('daily, weekdays, weekly, biweekly, monthly, yearly or empty') }, ['title']) },
+  { name: 'complete_task', description: 'Mark a to-do as done by (part of) its title.', parameters: obj({ title: S('the to-do') }, ['title']) },
+  { name: 'add_homework', description: 'Add homework, a test or an assignment.', parameters: obj({ subject: S('school subject'), title: S('what'), due: S('YYYY-MM-DD'), type: S('homework, test or assignment') }, ['title', 'due']) },
+  { name: 'add_event', description: 'Add a calendar event or a birthday.', parameters: obj({ title: S('what'), date: S('YYYY-MM-DD'), start: S('HH:MM, optional'), end: S('HH:MM, optional'), remind_minutes: N('minutes before to remind, optional'), birthday: Bo('true for a yearly birthday'), place: S('optional') }, ['title', 'date']) },
+  { name: 'add_countdown', description: 'Add a countdown to a date.', parameters: obj({ title: S('what'), date: S('YYYY-MM-DD'), emoji: S('one emoji'), yearly: Bo('repeats every year') }, ['title', 'date']) },
+  { name: 'add_shopping', description: 'Add items to the grocery shopping list.', parameters: obj({ items: { type: 'ARRAY', items: { type: 'STRING' }, description: 'items, may start with an amount like "2 milk"' } }, ['items']) },
+  { name: 'log_money', description: 'Log money spent or received.', parameters: obj({ amount: N('euros, positive'), type: S('out (spent) or in (received)'), note: S('what for'), date: S('YYYY-MM-DD, default today'), category: S('spent: ' + OUT_CATS.join(', ') + '. received: ' + IN_CATS.join(', ')) }, ['amount', 'type', 'note']) },
+  { name: 'add_note', description: 'Save a note.', parameters: obj({ title: S('title'), body: S('the note text') }, ['body']) },
+  { name: 'log_journal', description: 'Write today’s journal entry with a mood.', parameters: obj({ mood: N('1 (bad) to 5 (great)'), text: S('what happened') }, ['mood']) },
+  { name: 'tick_habit', description: 'Tick off a habit for a day.', parameters: obj({ name: S('habit name'), date: S('YYYY-MM-DD, default today') }, ['name']) },
+  { name: 'set_alarm', description: 'Add an alarm.', parameters: obj({ time: S('HH:MM'), label: S('optional'), days: { type: 'ARRAY', items: { type: 'NUMBER' }, description: 'weekdays 0=Sun..6=Sat; empty = once' } }, ['time']) },
+  { name: 'anime_episode', description: 'Mark the next episode of an anime as watched.', parameters: obj({ title: S('anime title') }, ['title']) },
+  { name: 'add_grade', description: 'Add a school grade (1-10).', parameters: obj({ subject: S('subject'), grade: N('1 to 10'), weight: N('default 1'), title: S('what for') }, ['subject', 'grade']) },
+];
+const READS = new Set(['get_day', 'get_week', 'get_status', 'search', 'money_summary']);
+
+/* ---------- read tools ---------- */
+function dayInfo(d) {
+  const items = K.agenda(d, { done: true }).map(x => ({ kind: x.kind, time: x.time || 'all day', end: x.end || undefined, title: x.title, info: x.sub || undefined, done: x.done || undefined }));
+  const out = { date: d, weekday: K.DAYS[K.fromYmd(d).getDay()], items };
+  if (d === K.ymd()) out.overdue_todos = K.tasks.all().filter(t => !t.done && t.due && t.due < d).map(t => `${t.title} (was due ${t.due})`);
+  out.homework_due_next_day = K.homework.all().filter(h => !h.done && h.due === K.addDays(d, 1)).map(h => `${h.type}: ${h.subject} ${h.title}`);
+  const a = K.alarms.all().filter(a => a.on).map(a => K.alarmTime(a, d)).filter(Boolean); if (a.length) out.alarms = a;
+  return out;
+}
+const READ = {
+  get_day: ({ date }) => dayInfo(date || K.ymd()),
+  get_week: ({ from }) => Array.from({ length: 7 }, (_, i) => { const x = dayInfo(K.addDays(from || K.ymd(), i)); return { date: x.date, weekday: x.weekday, items: x.items.filter(i => i.kind !== 'lesson').map(i => `${i.time} ${i.kind}: ${i.title}`), lessons: x.items.filter(i => i.kind === 'lesson').length }; }),
+  get_status() {
+    const d = K.ymd(), open = K.tasks.all().filter(t => !t.done);
+    let next = null; for (let i = 0; i < 14 && !next; i++) { const s = K.addDays(d, i); const l = K.lessonsOn(s).find(l => i || l.end > K.hm(new Date())); if (l) next = `${s} ${l.start} ${l.subject}`; }
+    const nx = K.nextAlarm(), ls = K.lastSleep(), hs = K.habits.all().filter(h => !h.archived);
+    const ym = d.slice(0, 7), mt = K.money.all().filter(t => String(t.date).slice(0, 7) === ym), budgets = K.get('budgets', {}) || {};
+    return {
+      now: `${d} ${K.hm(new Date())}`, todos_open: open.length, todos_today_or_overdue: open.filter(t => t.due && t.due <= d).map(t => t.title),
+      next_lesson: next, next_alarm: nx ? `${K.ymd(new Date(nx.at))} ${K.hm(new Date(nx.at))} ${nx.a.label || ''}` : null,
+      habits_today: hs.map(h => `${h.name}: ${K.habitDone(h, d) ? 'done' : 'not yet'} (streak ${K.habitStreak(h).n})`),
+      countdowns: K.countdowns.all().map(c => `${c.title} ${c.date}`), shopping_list: K.shop.all().filter(x => !x.done).map(x => (x.qty ? x.qty + ' ' : '') + x.name),
+      money_this_month: { spent: +mt.filter(t => t.type !== 'in').reduce((a, t) => a + K.num(t.amount), 0).toFixed(2), received: +mt.filter(t => t.type === 'in').reduce((a, t) => a + K.num(t.amount), 0).toFixed(2), budgets },
+      last_sleep: ls ? `${ls.bed} to ${ls.wake} (${Math.round(K.sleepMins(ls) / 6) / 10} h)` : null, sleep_goal_hours: K.sleepCfg().goal,
+      anime_watching: K.anime.all().filter(a => a.status === 'watching').map(a => `${a.title} ep ${a.ep || 0}${a.eps ? '/' + a.eps : ''}`),
+      savings_goals: K.savings.all().map(g => `${g.name}: ${g.saved || 0} of ${g.target}`), upcoming_tests: K.homework.all().filter(h => !h.done && h.type === 'test' && h.due >= d).map(h => `${h.due} ${h.subject} ${h.title}`),
+    };
+  },
+  search({ query }) {
+    const q = String(query || '').toLowerCase(), hit = s => String(s || '').toLowerCase().includes(q), out = [];
+    K.tasks.all().forEach(t => hit(t.title + ' ' + t.notes) && out.push(`to-do${t.done ? ' (done)' : ''}: ${t.title}${t.due ? ' due ' + t.due : ''}`));
+    K.homework.all().forEach(h => hit(h.subject + ' ' + h.title) && out.push(`${h.type}${h.done ? ' (done)' : ''}: ${h.subject} ${h.title} due ${h.due}`));
+    K.grades.all().forEach(g => hit(g.subject + ' ' + g.title) && out.push(`grade: ${g.subject} ${g.grade} (${g.title || ''} ${g.date || ''})`));
+    K.events.all().forEach(e => hit(e.title + ' ' + e.place) && out.push(`event: ${e.title} ${e.date}${e.start ? ' ' + e.start : ''}${e.repeat ? ' (' + e.repeat + ')' : ''}`));
+    K.notes.all().forEach(n => hit(n.title + ' ' + n.body) && out.push(`${n.kind === 'journal' ? 'journal ' + n.date : 'note'}: ${n.title || ''} ${String(n.body || '').slice(0, 200)}`));
+    K.countdowns.all().forEach(c => hit(c.title) && out.push(`countdown: ${c.title} ${c.date}`));
+    K.shop.all().forEach(x => hit(x.name) && out.push(`shopping: ${x.name}${x.done ? ' (in cart)' : ''}`));
+    K.wish.all().forEach(x => hit(x.name) && out.push(`wishlist: ${x.name} ${x.price || ''}`));
+    K.anime.all().forEach(a => hit(a.title) && out.push(`anime: ${a.title} ${a.status} ep ${a.ep || 0}`));
+    return { results: out.slice(0, 40) };
+  },
+  money_summary({ from, to, category }) {
+    const tx = K.money.all().filter(t => t.date >= from && t.date <= to && (!category || t.cat === category));
+    const sum = l => +l.reduce((a, t) => a + K.num(t.amount), 0).toFixed(2), out = tx.filter(t => t.type !== 'in');
+    const cats = {}, places = {}; out.forEach(t => { cats[t.cat] = +((cats[t.cat] || 0) + K.num(t.amount)).toFixed(2); const k = t.party || t.note || t.cat; places[k] = +((places[k] || 0) + K.num(t.amount)).toFixed(2); });
+    return { spent: sum(out), received: sum(tx.filter(t => t.type === 'in')), payments: tx.length, per_category: cats, top_places: Object.entries(places).sort((a, b) => b[1] - a[1]).slice(0, 8), biggest: out.sort((a, b) => b.amount - a.amount).slice(0, 5).map(t => `${t.date} ${t.note || t.party} ${t.amount}`) };
+  },
+};
+
+/* ---------- write tools: describe (for the preview) and do ---------- */
+const day = d => d ? K.fmtDay(d) : '';
+const DESCRIBE = {
+  add_task: a => `✅ To-do: <b>${esc(a.title)}</b>${a.due ? ' · ' + esc(day(a.due)) : ''}${a.time ? ' ' + esc(a.time) : ''}${a.time && a.remind !== false ? ' 🔔' : ''}${a.repeat ? ' · 🔁 ' + esc(a.repeat) : ''}${a.list && a.list !== 'Inbox' ? ' · #' + esc(a.list) : ''}`,
+  complete_task: a => { const t = findTask(a.title); return t ? `☑️ Mark done: <b>${esc(t.title)}</b>` : `☑️ Mark done: “${esc(a.title)}” (not found)`; },
+  add_homework: a => `📚 ${esc(a.type || 'homework')}: <b>${esc(a.subject ? a.subject + ' — ' : '')}${esc(a.title)}</b> · due ${esc(day(a.due))}`,
+  add_event: a => `📅 ${a.birthday ? 'Birthday' : 'Event'}: <b>${esc(a.title)}</b> · ${esc(day(a.date))}${a.start ? ' ' + esc(a.start) : ''}${a.end ? '–' + esc(a.end) : ''}${a.remind_minutes != null ? ` 🔔 ${a.remind_minutes} min before` : ''}`,
+  add_countdown: a => `⏳ Countdown: <b>${esc(a.emoji || '')} ${esc(a.title)}</b> · ${esc(K.fmtDate(a.date))}`,
+  add_shopping: a => `🛒 Shopping list: <b>${(a.items || []).map(esc).join(', ')}</b>`,
+  log_money: a => `${a.type === 'in' ? '💰 Money in' : '💸 Spent'}: <b>${K.eur(a.amount)}</b> · ${esc(a.note)}${a.category ? ' · ' + esc(a.category) : ''}${a.date && a.date !== K.ymd() ? ' · ' + esc(day(a.date)) : ''}`,
+  add_note: a => `📝 Note: <b>${esc(a.title || String(a.body).slice(0, 40))}</b>`,
+  log_journal: a => `📓 Journal: ${['😞', '😕', '😐', '🙂', '😄'][Math.min(5, Math.max(1, a.mood)) - 1]} ${esc(String(a.text || '').slice(0, 60))}`,
+  tick_habit: a => { const h = findHabit(a.name); return `🔥 Tick habit: <b>${esc(h ? h.name : a.name)}</b>${a.date && a.date !== K.ymd() ? ' · ' + esc(day(a.date)) : ''}${h ? '' : ' (not found)'}`; },
+  set_alarm: a => `⏰ Alarm: <b>${esc(a.time)}</b>${a.label ? ' · ' + esc(a.label) : ''} · ${(a.days || []).length ? (a.days || []).map(d => K.DAYS_SHORT[d]).join(', ') : 'once'}`,
+  anime_episode: a => { const x = findAnime(a.title); return x ? `🎬 Watched <b>${esc(x.title)}</b> episode ${(x.ep || 0) + 1}` : `🎬 “${esc(a.title)}” (not on your list)`; },
+  add_grade: a => `🎓 Grade: <b>${esc(a.subject)} ${(+a.grade).toFixed(1)}</b>${a.weight && +a.weight !== 1 ? ' (×' + a.weight + ')' : ''}${a.title ? ' · ' + esc(a.title) : ''}`,
+};
+const near = (list, q, key) => { q = String(q || '').toLowerCase(); return list.find(x => String(x[key]).toLowerCase() === q) || list.find(x => String(x[key]).toLowerCase().includes(q)) || list.find(x => q.includes(String(x[key]).toLowerCase())); };
+const findTask = q => near(K.tasks.all().filter(t => !t.done), q, 'title');
+const findHabit = q => near(K.habits.all().filter(h => !h.archived), q, 'name');
+const findAnime = q => near(K.anime.all(), q, 'title');
+const DO = {
+  add_task(a) { const lists = K.get('lists', ['Inbox', 'School', 'Personal', 'Gym']); const list = a.list ? (lists.find(l => l.toLowerCase() === a.list.toLowerCase()) || a.list) : 'Inbox'; if (!lists.includes(list)) K.put('lists', [...lists, list]);
+    K.tasks.upsert({ id: K.uid(), title: a.title, due: a.due || (a.time ? K.ymd() : ''), time: a.time || '', remind: a.remind != null ? !!a.remind : !!a.time, repeat: a.repeat || '', priority: +a.priority || 0, list, sub: [] }); return 'to-do added'; },
+  complete_task(a) { const t = findTask(a.title); if (!t) throw new Error('to-do not found'); if (t.repeat) t.due = K.repeatNext(t.due || K.ymd(), t.repeat); else { t.done = true; t.doneAt = Date.now(); } K.tasks.upsert(t); return 'done'; },
+  add_homework(a) { K.homework.upsert({ id: K.uid(), subject: a.subject || '', title: a.title, due: a.due, type: /test/i.test(a.type) ? 'test' : /assign/i.test(a.type) ? 'assignment' : 'homework', notes: '', done: false }); return 'added'; },
+  add_event(a) { K.events.upsert({ id: K.uid(), title: a.title, date: a.date, start: a.start || '', end: a.end || '', repeat: a.birthday ? 'yearly' : '', birthday: !!a.birthday, remind: a.remind_minutes != null ? String(a.remind_minutes) : (a.birthday ? '0' : ''), place: a.place || '', color: a.birthday ? '#f25f8a' : '#56ccf2', notes: '' }); return 'added'; },
+  add_countdown(a) { K.countdowns.upsert({ id: K.uid(), title: a.title, date: a.date, time: '', emoji: a.emoji || '⏳', color: '#ffcf5c', yearly: !!a.yearly }); return 'added'; },
+  add_shopping(a) { for (const raw of a.items || []) { const m = String(raw).trim().match(/^(\d+(?:[.,]\d+)?\s*(?:x|kg|g|l|ml)?)\s+(.+)$/i); const name = m ? m[2] : String(raw).trim(); if (!K.shop.all().some(x => !x.done && x.name.toLowerCase() === name.toLowerCase())) K.shop.upsert({ id: K.uid(), name, qty: m ? m[1] : '', cat: '🛒 Other', done: false }); } return 'added'; },
+  log_money(a) { const type = a.type === 'in' ? 'in' : 'out', cats = type === 'in' ? IN_CATS : OUT_CATS; K.money.upsert({ id: K.uid(), type, amount: Math.abs(K.num(a.amount)), note: a.note, cat: cats.includes(a.category) ? a.category : 'Other', date: a.date || K.ymd() }); return 'logged'; },
+  add_note(a) { K.notes.upsert({ id: K.uid(), kind: 'note', title: a.title || '', body: a.body || '', pinned: false, tags: [] }); return 'saved'; },
+  log_journal(a) { const d = K.ymd(), ex = K.notes.all().find(n => n.kind === 'journal' && n.date === d); const j = ex || { id: K.uid(), kind: 'journal', date: d, title: '' }; j.mood = Math.min(5, Math.max(1, Math.round(+a.mood || 3))); j.body = [ex && ex.body, a.text].filter(Boolean).join('\n'); K.notes.upsert(j); return 'saved'; },
+  tick_habit(a) { const h = findHabit(a.name); if (!h) throw new Error('habit not found'); h.log = h.log || {}; h.log[a.date || K.ymd()] = 1; K.habits.upsert(h); return 'ticked'; },
+  set_alarm(a) { const days = (a.days || []).map(Number).filter(d => d >= 0 && d <= 6); const al = { id: K.uid(), time: a.time, days, label: a.label || '', on: true, smart: false, snooze: 9 }; if (!days.length) al.once = K.alarmNextOnce(a.time); K.alarms.upsert(al); return 'alarm set'; },
+  anime_episode(a) { const x = findAnime(a.title); if (!x) throw new Error('not on your list'); x.ep = (x.ep || 0) + 1; x.log = x.log || {}; x.log[K.ymd()] = (x.log[K.ymd()] || 0) + 1; if (x.eps && x.ep >= x.eps) { x.ep = x.eps; x.status = 'done'; x.finishedAt = Date.now(); } else x.status = 'watching'; K.anime.upsert(x); return 'episode ' + x.ep; },
+  add_grade(a) { const g = +a.grade; if (!(g >= 1 && g <= 10)) throw new Error('grade must be 1-10'); K.grades.upsert({ id: K.uid(), subject: a.subject, grade: g, weight: +a.weight || 1, title: a.title || '', date: K.ymd() }); return 'added'; },
+};
+
+/* =================== conversation =================== */
+function system() {
+  const n = new Date(), lists = K.get('lists', ['Inbox', 'School', 'Personal', 'Gym']);
+  const subs = [...new Set(K.school().lessons.map(l => l.subject).concat(K.school().subjects.map(s => s.name)))];
+  return `You are the assistant inside "Life Hub", the user's personal all-in-one app (a teenager in the Netherlands who goes to school, works a part-time job and goes to the gym).
+Now: ${K.DAYS[n.getDay()]} ${K.ymd()} ${K.hm(n)}. Tomorrow is ${K.DAYS[(n.getDay() + 1) % 7]} ${K.addDays(K.ymd(), 1)}.
+Use the tools to look things up before answering questions about their day, school, plans, habits, money or lists. Never invent data.
+When they ask you to add, log, change or remind something, call the matching tool(s) right away (they will confirm on screen). Work out exact dates (YYYY-MM-DD) and times (HH:MM, 24h) yourself from words like "tomorrow", "friday", "next week", "tonight" (19:00). "Remind me" means add_task with a time and remind=true.
+Their to-do lists: ${lists.join(', ')}. School subjects: ${subs.join(', ') || 'none yet'}. Habits: ${K.habits.all().map(h => h.name).join(', ') || 'none'}.
+Answer short and friendly (usually 1-4 sentences or a short list). Answer in Dutch if they write Dutch. You can't control the Workout app (sets, food, water): tell them to use the Workout coach for that.`;
+}
+function render() {
+  const has = chat.length || pending;
+  let html = K.header('Assistant', 'ai', chat.length ? `<button class="iconbtn" type="button" data-act="clear" aria-label="New chat">🗑️</button>` : '');
+  if (!K.aiReady()) html += `<div class="card"><div class="k">Set up the AI</div><p class="small muted" style="margin:6px 0 0">The assistant uses your free Gemini key from the Workout app: <a href="../workout/" style="color:var(--c)">Workout</a> → You → AI coach. Until then you can still type <b>“remind me …”</b> or <b>“add …”</b> to make a to-do.</p></div>`;
+  html += `<div class="chat" id="chat">`;
+  if (!has) html += `<div class="msg ai">Hi! I can see your whole Life Hub: school, to-dos, calendar, habits, money, sleep, anime and more. Ask me something, or tell me what to add.</div>
+    <div class="sugg">${['What do I have tomorrow?', 'Remind me to bring my gym bag tomorrow at 7', 'How much did I spend on food this week?', 'What tests do I have coming up?', 'Add milk and eggs to the shopping list', 'How are my habits going?'].map(s => `<button type="button" data-s="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
+  for (const m of chat) {
+    if (m.role === 'user') html += `<div class="msg me">${esc(m.content)}</div>`;
+    else if (m.kind === 'done') html += `<div class="preview done"><div class="k">Done</div><ul>${m.items.map(i => `<li>${i}</li>`).join('')}</ul></div>`;
+    else html += `<div class="msg ai ${m.err ? 'err' : ''}">${K.md(m.content)}</div>`;
+  }
+  if (pending) html += `<div class="preview"><div class="k">Shall I do this?</div><ul>${pending.calls.map(c => `<li>${(DESCRIBE[c.name] || (() => esc(c.name)))(c.args)}</li>`).join('')}</ul>
+    <div class="row-btns"><button class="btn primary" type="button" data-act="do">✓ Do it</button><button class="btn" type="button" data-act="cancel">Cancel</button></div></div>`;
+  if (busy) html += `<div class="msg ai"><span class="dots">Thinking</span></div>`;
+  html += `</div>`;
+  K.$('#app').innerHTML = html;
+  setTimeout(() => window.scrollTo(0, document.body.scrollHeight), 0);
+}
+const save = () => K.put('ai.chat', chat.slice(-40));
+async function send(q) {
+  q = String(q || '').trim(); if (!q || busy) return;
+  if (pending) { pending = null; }
+  chat.push({ role: 'user', content: q }); save();
+  if (!K.aiReady()) { offline(q); return; }
+  busy = true; render();
+  try {
+    let msgs = chat.filter(m => !m.kind && !m.err).slice(-12).map(m => ({ role: m.role, content: m.content }));
+    for (let round = 0; round < 5; round++) {
+      const res = await K.aiTools(msgs, { system: system(), tools: TOOLS });
+      const reads = res.calls.filter(c => READS.has(c.name)), writes = res.calls.filter(c => !READS.has(c.name) && DO[c.name]);
+      if (writes.length) { pending = { calls: writes, text: res.text }; if (res.text) chat.push({ role: 'assistant', content: res.text }); break; }
+      if (reads.length) {
+        const out = reads.map(c => { let r; try { r = READ[c.name](c.args || {}); } catch (e) { r = { error: e.message }; } return { functionResponse: { name: c.name, response: { result: r } } }; });
+        msgs = msgs.concat([{ role: 'model', parts: res.parts }, { role: 'user', parts: out }]);
+        continue;
+      }
+      chat.push({ role: 'assistant', content: res.text || 'Okay.' }); break;
+    }
+  } catch (e) { chat.push({ role: 'assistant', content: '⚠️ ' + e.message, err: true }); }
+  busy = false; save(); render();
+}
+function doPending() {
+  const items = [];
+  for (const c of pending.calls) { const label = (DESCRIBE[c.name] || (() => c.name))(c.args); try { DO[c.name](c.args || {}); items.push('✓ ' + label); } catch (e) { items.push(`✗ ${label} — ${esc(e.message)}`); } }
+  chat.push({ role: 'assistant', kind: 'done', items, content: '' });
+  if (pending.calls.some(c => (c.name === 'add_task' && c.args.time) || c.name === 'set_alarm' || (c.name === 'add_event' && c.args.remind_minutes != null)) && !K.notifyOn()) K.askNotify();
+  pending = null; save(); render();
+}
+/* without an AI key: "remind me …" / "add …" still make a to-do */
+function offline(q) {
+  const m = q.match(/^(?:remind me (?:to )?|add (?:a )?(?:to-?do:? )?|herinner me (?:eraan )?(?:om )?|zet )(.+)$/i);
+  if (m) { const p = K.parseQuick(m[1]); pending = { calls: [{ name: 'add_task', args: { title: p.title, due: p.due, time: p.time, remind: !!p.time, repeat: p.repeat, list: p.list || 'Inbox', priority: p.priority } }] }; }
+  else chat.push({ role: 'assistant', content: 'I need the AI key for that. Add it in Workout → You → AI coach. Without it I can only make to-dos: start with “remind me …” or “add …”.' });
+  save(); render();
+}
+
+/* =================== voice =================== */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null;
+K.$('#mic').onclick = () => {
+  if (!SR) return K.toast('Speaking isn’t supported in this browser. Use the 🎤 on your keyboard.');
+  if (rec) { rec.stop(); return; }
+  rec = new SR(); rec.lang = /^nl/i.test(navigator.language) ? 'nl-NL' : (navigator.language || 'en-US'); rec.interimResults = true; rec.continuous = false;
+  const box = K.$('#q'), before = box.value; K.$('#mic').classList.add('on');
+  rec.onresult = e => { box.value = (before ? before + ' ' : '') + [...e.results].map(r => r[0].transcript).join(''); };
+  rec.onend = () => { K.$('#mic').classList.remove('on'); rec = null; if (box.value.trim() && box.value !== before) { send(box.value); box.value = ''; } };
+  rec.onerror = e => { if (e.error === 'not-allowed') K.toast('Microphone blocked. Allow it in Chrome’s site settings.'); };
+  rec.start();
+};
+
+/* =================== events =================== */
+K.$('#form').onsubmit = e => { e.preventDefault(); const v = K.$('#q').value; K.$('#q').value = ''; K.$('#q').style.height = ''; send(v); };
+K.$('#q').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); K.$('#form').requestSubmit(); } });
+K.$('#q').addEventListener('input', e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(140, e.target.scrollHeight) + 'px'; });
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.s) send(b.dataset.s);
+  else if (b.dataset.act === 'do') doPending();
+  else if (b.dataset.act === 'cancel') { pending = null; chat.push({ role: 'assistant', content: 'Okay, I didn’t change anything.' }); save(); render(); }
+  else if (b.dataset.act === 'clear') { chat.length = 0; pending = null; save(); render(); }
+});
+render();
+const q0 = new URLSearchParams(location.search).get('q');
+if (q0) { history.replaceState(null, '', location.pathname); send(q0); }
+</script>
+</body>
+</html>

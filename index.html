@@ -90,6 +90,16 @@ a.card:active, button.card:active { transform: scale(.99); }
 .agrow .tx small { color: var(--muted); font-weight: 500; margin-left: 4px; }
 .agrow .late { color: var(--bad); font-weight: 700; font-size: 12px; flex: none; }
 .agrow.done .tx { color: var(--muted-2); text-decoration: line-through; }
+.ask { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 6px 6px 6px 14px; margin-bottom: 12px; }
+.ask span { color: var(--accent); font-size: 18px; }
+.ask input { flex: 1; min-width: 0; background: none; border: 0; color: var(--ink); font: inherit; padding: 8px 0; outline: none; }
+.ask button { width: 38px; height: 38px; border-radius: 11px; background: var(--accent); color: var(--accent-ink); font-weight: 800; }
+.lay { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.lay:first-child { border-top: 0; }
+.lay b { flex: 1; font-weight: 600; }
+.lay.off b { color: var(--muted-2); text-decoration: line-through; }
+.lay button { width: 34px; height: 34px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-weight: 800; }
+.lay button:disabled { opacity: .3; }
 .banner { display: flex; gap: 10px; align-items: center; background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); border-radius: 14px; padding: 11px 13px; font-size: 13.5px; margin-bottom: 12px; }
 .banner b { font-weight: 700; }
 .banner .act { margin-left: auto; font-weight: 700; color: var(--accent); white-space: nowrap; }
@@ -147,30 +157,34 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       <a class="act" href="#settings">Back up</a>
     </div>
 
-    <a class="card" id="c-weather" href="#settings" style="--c:var(--warn)">
+    <form class="ask" data-block="ask" action="assistant/" method="get" autocomplete="off">
+      <span aria-hidden="true">✦</span><input name="q" placeholder="Ask Life Hub… e.g. what do I have tomorrow?" aria-label="Ask Life Hub"><button type="submit" aria-label="Ask">➜</button>
+    </form>
+
+    <a class="card" data-block="weather" id="c-weather" href="#settings" style="--c:var(--warn)">
       <div class="k"><span class="dot"></span><span id="w-place">Weather</span><span class="go">›</span></div>
       <div class="big" id="w-now"><span class="skel"></span></div>
       <div class="sub" id="w-sub">&nbsp;</div>
     </a>
 
-    <a class="card" id="c-trip" href="travel/" style="--c:var(--travel)">
+    <a class="card" data-block="trip" id="c-trip" href="travel/" style="--c:var(--travel)">
       <div class="k"><span class="dot"></span><span id="t-route">Next trip</span><span class="go">›</span></div>
       <div class="big num" id="t-main"><span class="skel"></span></div>
       <div class="sub" id="t-sub">&nbsp;</div>
     </a>
 
-    <a class="card" id="c-workout" href="workout/" style="--c:var(--workout)">
+    <a class="card" data-block="workout" id="c-workout" href="workout/" style="--c:var(--workout)">
       <div class="k"><span class="dot"></span><span>Workout today</span><span class="go">›</span></div>
       <div class="big" id="wo-main"><span class="skel"></span></div>
       <div class="sub" id="wo-sub">&nbsp;</div>
     </a>
 
-    <div class="card" id="c-plan" style="--c:#8b7cff">
+    <div class="card" data-block="plan" id="c-plan" style="--c:#8b7cff">
       <div class="k"><span class="dot"></span><span id="pl-title">Today’s plan</span><a class="go" href="calendar/" style="text-decoration:none" aria-label="Open calendar">›</a></div>
       <div id="pl-list" style="margin-top:8px"></div>
     </div>
 
-    <div class="tiles">
+    <div class="tiles" data-block="life">
       <a class="tile" href="todo/" style="--c:#8b7cff">
         <div class="k">To-do</div><div class="v num" id="td-v">–</div><div class="s" id="td-s">&nbsp;</div>
       </a>
@@ -183,7 +197,7 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       </a>
     </div>
 
-    <div class="tiles">
+    <div class="tiles" data-block="fun">
       <a class="tile" href="alarm/" style="--c:#9b8cff">
         <div class="k">Alarm</div><div class="v num" id="al-v">–</div><div class="s" id="al-s">&nbsp;</div>
       </a>
@@ -195,7 +209,7 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       </a>
     </div>
 
-    <div class="tiles">
+    <div class="tiles" data-block="daily">
       <a class="tile" href="sleep/" style="--c:#9b8cff">
         <div class="k">Sleep</div><div class="v num" id="sl-v">–</div><div class="s" id="sl-s">&nbsp;</div>
       </a>
@@ -208,7 +222,7 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       </a>
     </div>
 
-    <div class="tiles">
+    <div class="tiles" data-block="body">
       <a class="tile" href="workout/" style="--c:var(--water)">
         <div class="k">Water</div><div class="v num" id="wa-v">–</div><div class="s num" id="wa-s">&nbsp;</div>
         <div class="bar"><i id="wa-b"></i></div>
@@ -222,7 +236,7 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
         <div class="bar"><i id="ca-b"></i></div>
       </a>
     </div>
-    <p class="note">Water, food and caffeine come from your Workout app. Tap a tile to log more.</p>
+    <p class="note" data-block-note="body">Water, food and caffeine come from your Workout app. Tap a tile to log more.</p>
   </main>
 
   <!-- APPS -->
@@ -263,6 +277,10 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       </div>
     </div>
     <p class="note">The PIN keeps other people out of the app on your phone. It does not encrypt your data.</p>
+
+    <div class="sec">Today screen</div>
+    <div class="panel" id="layPanel"></div>
+    <p class="note">Switch cards on or off and move them up or down.</p>
 
     <div class="sec">Reminders</div>
     <div class="panel">
@@ -621,6 +639,7 @@ const ICON = {
   ai: '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM18.5 15l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/>',
 };
 const APPS = [
+  { id: 'ai', name: 'Assistant', sub: 'Ask or tell anything', c: '#b48cff', href: 'assistant/' },
   { id: 'travel', name: 'Travel', sub: 'Live trips & map', c: 'var(--travel)', href: 'travel/' },
   { id: 'workout', name: 'Workout', sub: 'Gym, food, water', c: 'var(--workout)', href: 'workout/' },
   { id: 'todo', name: 'To-do', sub: 'Tasks & reminders', c: '#8b7cff', href: 'todo/' },
@@ -638,7 +657,6 @@ const APPS = [
   { id: 'anime', name: 'Anime', sub: 'Your watch list', c: '#ff7eb6', href: 'anime/' },
   { id: 'clothes', name: 'Clothes', sub: 'Outfits & wardrobe', c: '#b48cff', href: 'clothes/' },
   { id: 'shave', name: 'Shaving', sub: 'Days & blades', c: '#56ccf2', href: 'shaving/' },
-  { id: 'ai', name: 'Assistant', sub: 'AI for everything', c: '#b48cff' },
 ];
 function drawApps() {
   const tile = a => `${a.href ? `<a class="app" href="${a.href}"` : `<button class="app soon" type="button" data-soon="${a.name}"`} style="--c:${a.c}">
@@ -745,9 +763,33 @@ $('#wHere').onclick = () => {
 $('#wReset').onclick = () => { localStorage.removeItem('hub.place'); drawSettings(); loadWeather(); };
 $('#theme').onchange = e => { set('hub.theme', e.target.value); applyTheme(); };
 
+/* ---------- Today layout (which cards, in which order) ---------- */
+const BLOCKS = [['ask', '✦ Ask Life Hub'], ['weather', '🌦️ Weather'], ['trip', '🚌 Next trip'], ['workout', '🏋️ Workout today'], ['plan', '📋 Today’s plan'],
+  ['life', '✅ To-do · Habits · Countdown'], ['fun', '⏰ Alarm · Music · Anime'], ['daily', '😴 Sleep · Money · Shopping'], ['body', '💧 Water · Protein · Caffeine']];
+function layout() { const l = get('hub.layout', null) || {}; const order = (l.order || []).filter(k => BLOCKS.some(b => b[0] === k)); BLOCKS.forEach(b => { if (!order.includes(b[0])) order.push(b[0]); }); return { order, hidden: l.hidden || [] }; }
+function applyLayout() {
+  const L = layout(), main = $('#v-today'), note = main.querySelector('[data-block-note]');
+  for (const k of L.order) { const el = main.querySelector(`[data-block="${k}"]`); if (!el) continue; main.appendChild(el); el.hidden = L.hidden.includes(k); if (k === 'body' && note) { main.appendChild(note); note.hidden = el.hidden; } }
+}
+function drawLayout() {
+  const L = layout();
+  $('#layPanel').innerHTML = L.order.map((k, i) => { const b = BLOCKS.find(x => x[0] === k), off = L.hidden.includes(k);
+    return `<div class="lay ${off ? 'off' : ''}"><input type="checkbox" data-lay-show="${k}" ${off ? '' : 'checked'} aria-label="Show ${esc(b[1])}" style="width:20px;height:20px;accent-color:var(--accent)"><b>${esc(b[1])}</b>
+      <button type="button" data-lay-move="${k}" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move up">↑</button><button type="button" data-lay-move="${k}" data-dir="1" ${i === L.order.length - 1 ? 'disabled' : ''} aria-label="Move down">↓</button></div>`; }).join('');
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-lay-move]'); if (!b) return;
+  const L = layout(), i = L.order.indexOf(b.dataset.layMove), j = i + +b.dataset.dir; if (j < 0 || j >= L.order.length) return;
+  [L.order[i], L.order[j]] = [L.order[j], L.order[i]]; set('hub.layout', L); drawLayout(); applyLayout();
+});
+document.addEventListener('change', e => {
+  const c = e.target.closest('[data-lay-show]'); if (!c) return;
+  const L = layout(), k = c.dataset.layShow; L.hidden = L.hidden.filter(x => x !== k); if (!c.checked) L.hidden.push(k); set('hub.layout', L); drawLayout(); applyLayout();
+});
+
 /* ---------- start ---------- */
 function refreshAll() { greet(); drawWorkout(); drawPlan(); drawBackupBanner(); loadTrip(); loadWeather(); }
-drawApps(); route(); refreshAll(); drawSettings();
+drawApps(); applyLayout(); route(); refreshAll(); drawSettings(); drawLayout();
 setInterval(() => { if (document.visibilityState === 'visible') { loadTrip(); drawWorkout(); drawPlan(); } }, 60000);
 setInterval(() => { if (document.visibilityState === 'visible') loadWeather(); }, 15 * 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshAll(); });

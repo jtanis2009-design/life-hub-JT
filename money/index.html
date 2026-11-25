@@ -63,14 +63,14 @@ function learn(t) { if (!t.party) return; const rules = K.get('money.rules', {})
 const receiptFor = id => K.receipts.all().find(r => r.txId === id);
 const emo = (type, c) => ((type === 'in' ? IN : OUT).find(x => x[0] === c) || ['', '💸'])[1];
 const COLORS = ['#3ecf9a', '#56ccf2', '#8b7cff', '#f25f8a', '#ffcf5c', '#f2994a', '#ff7b7b', '#b48cff', '#5db3e4', '#c9b37e', '#9097a8'];
-const TABS = [['month', 'Month'], ['receipts', 'Receipts'], ['budgets', 'Budgets'], ['savings', 'Savings'], ['subs', 'Subscriptions']];
+const TABS = [['month', 'Month'], ['year', 'Year'], ['receipts', 'Receipts'], ['budgets', 'Budgets'], ['savings', 'Savings'], ['subs', 'Subscriptions']];
 let tab = TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : 'month';
 let ym = K.ymd().slice(0, 7);
 
 function monthTx(m = ym) { return K.money.all().filter(t => String(t.date).slice(0, 7) === m); }
 function render() {
   let html = K.header('Money', 'money') + `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}</button>`).join('')}</div>`;
-  html += ({ month: monthHtml, receipts: receiptsHtml, budgets: budgetsHtml, savings: savingsHtml, subs: subsHtml })[tab]();
+  html += ({ month: monthHtml, year: yearHtml, receipts: receiptsHtml, budgets: budgetsHtml, savings: savingsHtml, subs: subsHtml })[tab]();
   if (tab === 'receipts') loadThumbs();
   K.$('#app').innerHTML = html;
 }
@@ -145,6 +145,41 @@ function editTx(t, type) {
     del: isNew ? null : () => { K.money.remove(t.id); const r = receiptFor(t.id); if (r) { r.txId = ''; K.receipts.upsert(r); } render(); K.toast('Deleted', () => { K.money.upsert(t); render(); }); },
   });
   f.addEventListener('click', e => { const b = e.target.closest('[data-attach],[data-openr]'); if (!b) return; f.parentElement.remove(); if (b.dataset.attach) pickReceipt(t.id); else editReceipt(K.receipts.byId(b.dataset.openr)); });
+}
+
+/* ---------- year ---------- */
+let yr = K.ymd().slice(0, 4);
+function yearHtml() {
+  const all = K.money.all(), years = [...new Set(all.map(t => String(t.date).slice(0, 4)).filter(Boolean))].sort();
+  if (!years.includes(yr)) years.push(yr);
+  const tx = all.filter(t => String(t.date).slice(0, 4) === yr), out = tx.filter(t => t.type !== 'in'), inn = tx.filter(t => t.type === 'in');
+  const sum = l => l.reduce((a, t) => a + K.num(t.amount), 0);
+  const sOut = sum(out), sIn = sum(inn);
+  let html = `<div class="mhead"><button class="iconbtn" type="button" data-yr="-1" aria-label="Previous year" ${years[0] >= yr ? 'disabled style="opacity:.3"' : ''}>${svg('left')}</button><h2>${yr}</h2><button class="iconbtn" type="button" data-yr="1" aria-label="Next year" ${yr >= K.ymd().slice(0, 4) ? 'disabled style="opacity:.3"' : ''}>${svg('right')}</button></div>`;
+  if (!tx.length) return html + `<div class="empty"><b>Nothing in ${yr}</b>Import your bank statement to see your year.</div>`;
+  const months = [...new Set(tx.map(t => String(t.date).slice(0, 7)))].length;
+  html += `<div class="grid2"><div class="stat"><div class="k">Came in</div><div class="v num in">${eur(sIn)}</div><div class="s">${eur(sIn / months)} a month</div></div>
+    <div class="stat"><div class="k">Spent</div><div class="v num">${eur(sOut)}</div><div class="s">${eur(sOut / months)} a month</div></div></div>
+    <div class="card"><div class="k">${sIn >= sOut ? 'Kept' : 'Short'} this year</div><div class="big num" style="color:${sIn >= sOut ? 'var(--good)' : 'var(--bad)'}">${eur(Math.abs(sIn - sOut))}</div><div class="muted small">${sIn ? Math.round((sIn - sOut) / sIn * 100) : 0}% of what came in · ${K.plural(tx.length, 'payment')} in ${K.plural(months, 'month')}</div></div>`;
+  /* per month bars */
+  const per = Array.from({ length: 12 }, (_, i) => { const m = `${yr}-${K.pad(i + 1)}`, l = tx.filter(t => String(t.date).slice(0, 7) === m); return { m, i: sum(l.filter(t => t.type === 'in')), o: sum(l.filter(t => t.type !== 'in')) }; });
+  const max = Math.max(1, ...per.map(p => Math.max(p.i, p.o)));
+  html += `<div class="card"><div class="k">Per month · <span style="color:var(--good)">in</span> / <span style="color:var(--bad)">out</span></div><div style="display:flex;align-items:flex-end;gap:4px;height:120px;margin-top:10px">${per.map(p => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;height:100%;justify-content:flex-end" title="${p.m}: in ${eur(p.i)}, out ${eur(p.o)}"><div style="display:flex;gap:1px;align-items:flex-end;width:100%;justify-content:center;height:calc(100% - 15px)"><i style="width:45%;max-width:10px;border-radius:3px 3px 1px 1px;background:var(--good);height:${p.i / max * 100}%;min-height:${p.i ? 2 : 0}px"></i><i style="width:45%;max-width:10px;border-radius:3px 3px 1px 1px;background:var(--bad);opacity:.85;height:${p.o / max * 100}%;min-height:${p.o ? 2 : 0}px"></i></div><span style="font-size:10px;color:var(--muted-2);font-weight:700">${K.MONTHS[+p.m.slice(5) - 1][0]}</span></div>`).join('')}</div></div>`;
+  /* categories */
+  const cats = {}; out.forEach(t => cats[t.cat] = (cats[t.cat] || 0) + K.num(t.amount));
+  const cl = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+  html += `<div class="card"><div class="k">Where it went</div><div class="stack">${cl.map(([c, v], i) => `<i style="width:${v / sOut * 100}%;background:${COLORS[i % COLORS.length]}"></i>`).join('')}</div>
+    <div class="legend">${cl.map(([c, v], i) => `<span style="--dot:${COLORS[i % COLORS.length]}">${esc(c)} ${eur(v)} (${Math.round(v / sOut * 100)}%)</span>`).join('')}</div></div>`;
+  /* income sources */
+  const src = {}; inn.forEach(t => src[t.cat] = (src[t.cat] || 0) + K.num(t.amount));
+  html += `<div class="sec">Where it came from</div><div class="list">${Object.entries(src).sort((a, b) => b[1] - a[1]).map(([c, v]) => `<div class="item"><span style="font-size:20px;width:26px;text-align:center">${emo('in', c)}</span><span class="body title">${esc(c)}</span><span class="right num in">${eur(v)}</span></div>`).join('')}</div>`;
+  const job = per.map(p => ({ m: p.m, v: sum(inn.filter(t => t.cat === 'Job' && String(t.date).slice(0, 7) === p.m)) })).filter(x => x.v);
+  if (job.length) { const best = job.slice().sort((a, b) => b.v - a.v)[0]; html += `<p class="hint">💼 Work: ${eur(sum(inn.filter(t => t.cat === 'Job')))} this year, ${eur(sum(inn.filter(t => t.cat === 'Job')) / job.length)} a month on average. Best month: ${K.MONTHS[+best.m.slice(5) - 1]} (${eur(best.v)}).</p>`; }
+  /* places & biggest */
+  const places = {}; out.forEach(t => { const k = (t.party || t.note || t.cat).replace(/\s+\d+$/, ''); const p = places[k] = places[k] || { n: 0, v: 0 }; p.n++; p.v += K.num(t.amount); });
+  html += `<div class="sec">Top places</div><div class="list">${Object.entries(places).sort((a, b) => b[1].v - a[1].v).slice(0, 10).map(([n, p], i) => `<div class="item"><b style="width:20px;color:var(--muted)">${i + 1}</b><span class="body"><span class="title">${esc(n)}</span><span class="meta"><span>${p.n}×</span></span></span><span class="right num">${eur(p.v)}</span></div>`).join('')}</div>`;
+  html += `<div class="sec">Biggest buys</div><div class="list">${out.slice().sort((a, b) => K.num(b.amount) - K.num(a.amount)).slice(0, 5).map(txRow).join('')}</div>`;
+  return html;
 }
 
 /* ---------- budgets ---------- */
@@ -468,6 +503,7 @@ async function checkInbox() {
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
   if (d.tab) { tab = d.tab; history.replaceState(null, '', '#' + tab); render(); }
+  else if (d.yr) { yr = String(+yr + +d.yr); render(); }
   else if (d.m) { const [y, m] = ym.split('-').map(Number); ym = K.ymd(new Date(y, m - 1 + +d.m, 1)).slice(0, 7); render(); }
   else if (d.tx) editTx(K.money.byId(d.tx));
   else if (d.budget) editBudget(d.budget);
@@ -479,7 +515,7 @@ document.addEventListener('click', e => {
   else if (d.act === 'photoReceipt') pickReceipt('', true);
   else if (d.act === 'linkReceipt') editReceipt(null, { url: '' });
   else if (d.rc) editReceipt(K.receipts.byId(d.rc));
-  else if (b.id === 'fab') ({ month: () => editTx(), receipts: () => pickReceipt(), budgets: () => editTx(), savings: () => editGoal(), subs: () => editSub() })[tab]();
+  else if (b.id === 'fab') ({ month: () => editTx(), year: () => editTx(), receipts: () => pickReceipt(), budgets: () => editTx(), savings: () => editGoal(), subs: () => editSub() })[tab]();
 });
 document.addEventListener('input', e => { if (e.target.id === 'rsearch') { rq = e.target.value; render(); const el = K.$('#rsearch'); el.focus(); el.setSelectionRange(rq.length, rq.length); } });
 document.addEventListener('submit', e => { if (e.target.id !== 'quick') return; e.preventDefault(); if (quickAdd(K.$('#q').value)) { render(); K.$('#q').focus(); } });
