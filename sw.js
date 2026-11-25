@@ -1,7 +1,7 @@
 /* Life Hub offline cache for every module (travel/, workout/, ...).
    Network first so a new version shows up right away; the saved copy is used when offline or on a weak signal.
    Live data (bus times, weather, AI, cloud sync) is never cached here: other sites go straight to the network. */
-var CACHE = 'life-hub-v15';
+var CACHE = 'life-hub-v16';
 var SHELL = ['./', 'index.html', 'hub.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'lib/kit.css', 'lib/kit.js', 'lib/agenda.js', 'lib/files.js', 'lib/bankimport.js', 'lib/ai.js', 'lib/sync.js', 'lib/ics.js',
   'travel/', 'travel/map.js', 'travel/icons/icon.svg', 'workout/', 'workout/icon-192.png',
@@ -20,8 +20,8 @@ self.addEventListener('fetch', function (e) {
   var req = e.request, url = new URL(req.url);
   /* something shared to Life Hub from another app (Android Share menu): keep it for the Money page */
   if (req.method === 'POST' && url.origin === self.location.origin && url.searchParams.has('share-target')) {
-    e.respondWith(saveShared(req).catch(function () {}).then(function () {
-      return Response.redirect(new URL('money/#receipts', self.registration.scope).href, 303);
+    e.respondWith(saveShared(req).catch(function () { return ''; }).then(function (to) {
+      return Response.redirect(new URL(to || 'money/#receipts', self.registration.scope).href, 303);
     }));
     return;
   }
@@ -84,10 +84,16 @@ function saveShared(req) {
   return req.formData().then(function (form) {
     var files = form.getAll('files').filter(function (f) { return f && f.size; });
     var title = form.get('title') || '', text = form.get('text') || '', link = form.get('url') || '';
+    /* a YouTube song (YouTube app → Share → Life Hub) becomes an alarm sound */
+    var yt = String(link + ' ' + text).match(/https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/\S+/);
+    if (!files.length && yt) return 'alarm/#addsong=' + encodeURIComponent(yt[0]);
+    var audio = files.length === 1 && (/^audio\//.test(files[0].type) || /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)$/i.test(files[0].name || ''));
     return idb().then(function (d) {
       return new Promise(function (res, rej) {
         var t = d.transaction(['files', 'inbox'], 'readwrite');
         var fs = t.objectStore('files'), inbox = t.objectStore('inbox');
+        if (audio) { var aid = uid(); fs.put({ id: aid, blob: files[0], name: files[0].name || 'sound', type: files[0].type || 'audio/mpeg', size: files[0].size, at: Date.now() });
+          t.oncomplete = function () { res('alarm/#audio=' + aid); }; t.onerror = function () { rej(t.error); }; return; }
         if (files.length) files.forEach(function (f) {
           var id = uid();
           fs.put({ id: id, blob: f, name: f.name || 'shared', type: f.type || '', size: f.size, at: Date.now() });

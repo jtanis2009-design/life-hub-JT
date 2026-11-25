@@ -96,6 +96,7 @@
           "accept": [
             "application/pdf",
             "image/*",
+            "audio/*",
             ".pdf"
           ]
         }
