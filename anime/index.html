@@ -61,7 +61,8 @@ function row(a) {
   const pct = a.eps ? Math.min(100, a.ep / a.eps * 100) : 0;
   const meta = [];
   if (a.status === 'watching' && K.animeAirsToday(a)) meta.push(`<span class="today-badge">NEW TODAY</span>`);
-  if (a.airing && a.airDay != null) meta.push(`${K.DAYS[a.airDay]}s${a.airTime ? ' ' + a.airTime : ''}`);
+  if (a.airing && a.nextAt && a.nextAt > Date.now() - 864e5) meta.push(`ep ${a.nextEp} ${K.fmtDayIn(K.ymd(new Date(a.nextAt)))} ${K.hm(new Date(a.nextAt))}`);
+  else if (a.airing && a.airDay != null) meta.push(`${K.DAYS[a.airDay]}s${a.airTime ? ' ' + a.airTime : ''}`);
   if (a.score) meta.push(`★ ${a.score}`);
   if (a.year) meta.push(a.year);
   const plus = a.status === 'watching' || a.status === 'plan' || a.status === 'paused';
@@ -113,6 +114,56 @@ function fromJikan(d) {
     eps: d.episodes || 0, airing: !!d.airing, airDay: d.airing ? loc.day : null, airTime: d.airing ? loc.time : '', year: d.year || (d.aired && d.aired.prop && d.aired.prop.from && d.aired.prop.from.year) || '',
     genres: (d.genres || []).concat(d.themes || []).map(g => g.name).slice(0, 6), epMin: mins ? +mins[1] : 24, malScore: d.score || 0, type: d.type || '' };
 }
+/* ---------- AniList (main source: free, no key, exact time of the next episode) ---------- */
+const AL_FIELDS = 'id idMal title{english romaji} episodes duration status format seasonYear averageScore genres coverImage{large} nextAiringEpisode{airingAt episode}';
+async function anilist(query, variables) {
+  const r = await fetch('https://graphql.anilist.co', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ query, variables }) });
+  if (r.status === 429) throw Object.assign(new Error('Too many searches. Wait a minute and try again.'), { status: 429 });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.errors) throw Object.assign(new Error('AniList didn’t answer (' + r.status + ').'), { status: r.status });
+  return j.data;
+}
+function fromAniList(m) {
+  const n = m.nextAiringEpisode, at = n ? new Date(n.airingAt * 1000) : null;
+  return { alId: m.id, malId: m.idMal || null, title: (m.title && (m.title.english || m.title.romaji)) || 'Untitled', titleJp: m.title && m.title.romaji,
+    image: (m.coverImage && m.coverImage.large) || '', eps: m.episodes || 0, airing: m.status === 'RELEASING', airDay: at ? at.getDay() : null, airTime: at ? K.hm(at) : '',
+    nextEp: n ? n.episode : null, nextAt: at ? at.getTime() : null, year: m.seasonYear || '', genres: (m.genres || []).slice(0, 6), epMin: m.duration || 24,
+    malScore: m.averageScore ? +(m.averageScore / 10).toFixed(1) : 0, type: ({ TV: 'TV', TV_SHORT: 'TV short', MOVIE: 'Movie', OVA: 'OVA', ONA: 'ONA', SPECIAL: 'Special', MUSIC: 'Music' })[m.format] || m.format || '' };
+}
+const same = (x, a) => (a.alId && x.alId === a.alId) || (a.malId && x.malId === a.malId);
+async function searchAnime(q) {
+  try {
+    const d = await anilist(`query($s:String){Page(perPage:10){media(search:$s,type:ANIME,isAdult:false,sort:[SEARCH_MATCH,POPULARITY_DESC]){${AL_FIELDS}}}}`, { s: q });
+    return d.Page.media.map(fromAniList);
+  } catch (e) {
+    if (e.status === 429) throw e;
+    /* AniList down: try MyAnimeList through Jikan */
+    try {
+      const r = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=10&sfw=true&order_by=members&sort=desc`);
+      if (!r.ok) throw new Error();
+      return ((await r.json()).data || []).map(fromJikan);
+    } catch {
+      throw new Error(navigator.onLine === false ? 'You seem to be offline. You can still add it without search.' : 'The anime databases aren’t answering right now. Try again later, or add it without search.');
+    }
+  }
+}
+/* keep airing shows up to date (next episode time, total episodes, finished), at most twice a day */
+async function refreshAiring(force) {
+  const list = A.all().filter(a => a.alId && (a.airing || (!a.eps && a.status !== 'done')) && a.status !== 'dropped');
+  if (!list.length || (!force && Date.now() - (K.get('anime.refreshed', 0) || 0) < 12 * 36e5)) return;
+  try {
+    const d = await anilist(`query($ids:[Int]){Page(perPage:50){media(id_in:$ids,type:ANIME){${AL_FIELDS}}}}`, { ids: list.map(a => a.alId) });
+    let changed = 0;
+    for (const m of d.Page.media) {
+      const a = A.all().find(x => x.alId === m.id); if (!a) continue;
+      const f = fromAniList(m), before = JSON.stringify([a.airing, a.airDay, a.airTime, a.eps, a.nextEp]);
+      Object.assign(a, { airing: f.airing, airDay: f.airDay, airTime: f.airTime, nextEp: f.nextEp, nextAt: f.nextAt, eps: f.eps || a.eps });
+      if (JSON.stringify([a.airing, a.airDay, a.airTime, a.eps, a.nextEp]) !== before) { A.upsert(a); changed++; }
+    }
+    K.put('anime.refreshed', Date.now());
+    if (changed) render();
+  } catch {}
+}
 function searchSheet() {
   const f = K.form({
     title: 'Add anime', saveLabel: 'Add without search',
@@ -124,22 +175,21 @@ function searchSheet() {
   const run = async q => {
     if (q.length < 2) { box.innerHTML = ''; return; }
     box.innerHTML = `<p class="muted small">Searching…</p>`;
+    const asked = q;
     try {
-      const r = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&limit=10&sfw=true&order_by=members&sort=desc`);
-      if (!r.ok) throw new Error(r.status === 429 ? 'Too many searches. Wait a few seconds.' : 'The anime database didn’t answer (' + r.status + ').');
-      const j = await r.json();
-      const res = (j.data || []).map(fromJikan);
+      const res = await searchAnime(q);
+      if (f.elements.q.value.trim() !== asked) return;      /* you typed more meanwhile: a newer search is coming */
       f._res = res;
       box.innerHTML = res.length ? `<div>${res.map((a, i) => `<button class="res" type="button" data-pick="${i}"><span class="cover" style="${a.image ? `background-image:url('${esc(a.image)}')` : ''}"></span>
         <span style="flex:1;min-width:0"><b style="display:block">${esc(a.title)}</b><span class="small muted">${[a.type, a.year, a.eps ? a.eps + ' eps' : a.airing ? 'airing' : '', a.malScore ? '★ ' + a.malScore : ''].filter(Boolean).join(' · ')}</span>
-        ${A.all().some(x => x.malId === a.malId) ? '<span class="small" style="color:var(--c);display:block">Already on your list</span>' : ''}</span></button>`).join('')}</div>` : `<p class="muted small">Nothing found. Tap “Add without search” to add it yourself.</p>`;
-    } catch (e) { box.innerHTML = `<p class="small" style="color:var(--bad)">${esc(e.message === 'Failed to fetch' ? 'You seem to be offline. You can still add it without search.' : e.message)}</p>`; }
+        ${A.all().some(x => same(x, a)) ? '<span class="small" style="color:var(--c);display:block">Already on your list</span>' : ''}</span></button>`).join('')}</div>` : `<p class="muted small">Nothing found. Tap “Add without search” to add it yourself.</p>`;
+    } catch (e) { box.innerHTML = `<p class="small" style="color:var(--bad)">${esc(e.message)}</p>`; }
   };
   f.elements.q.addEventListener('input', e => { clearTimeout(t); t = setTimeout(() => run(e.target.value.trim()), 450); });
   f.elements.q.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(t); run(e.target.value.trim()); } });
   f.addEventListener('click', e => {
     const b = e.target.closest('[data-pick]'); if (!b) return;
-    const a = f._res[+b.dataset.pick], ex = A.all().find(x => x.malId === a.malId);
+    const a = f._res[+b.dataset.pick], ex = A.all().find(x => same(x, a));
     f.parentElement.remove();
     if (ex) { edit(ex); return; }
     edit(null, Object.assign(a, { status: tab === 'plan' ? 'plan' : 'watching' }));
@@ -192,6 +242,7 @@ document.addEventListener('click', e => {
 });
 K.$('#fab').innerHTML = svg('plus');
 render();
+refreshAiring();
 </script>
 </body>
 </html>
