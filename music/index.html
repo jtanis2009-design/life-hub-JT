@@ -46,7 +46,7 @@ const cfg = () => Object.assign({ source: '', clientId: '', lfmUser: '', lfmKey:
 let view = K.get('music.view', 'week'), now = null, lfm = null, err = '';
 
 /* =============== Spotify (PKCE login: no secret needed) =============== */
-const SCOPES = 'user-read-currently-playing user-read-recently-played user-top-read user-read-playback-state';
+const SCOPES = 'user-read-currently-playing user-read-recently-played user-top-read user-read-playback-state user-modify-playback-state';
 const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 async function spConnect() {
   const c = cfg(); if (!c.clientId) return setup();
@@ -60,7 +60,7 @@ async function spToken(params) {
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error_description || j.error || 'Spotify login failed (' + r.status + ')');
   const old = K.get('music.sp', {}) || {};
-  K.put('music.sp', { access: j.access_token, refresh: j.refresh_token || old.refresh, exp: Date.now() + (j.expires_in - 60) * 1000 });
+  K.put('music.sp', { access: j.access_token, refresh: j.refresh_token || old.refresh, exp: Date.now() + (j.expires_in - 60) * 1000, scope: j.scope || old.scope });
 }
 async function spFinishLogin() {
   const q = new URLSearchParams(location.search);
@@ -226,7 +226,10 @@ document.addEventListener('click', e => {
   else if (a === 'setupSp') setup('spotify');
   else if (a === 'disconnect') { if (confirm('Disconnect your music account? Your counted songs stay.')) { K.put('music', {}); K.put('music.sp', {}); b.closest('.sheet-bg').remove(); now = null; render(); } }
 });
-(async () => { await spFinishLogin(); render(); refresh(); })();
+(async () => {
+  if (location.hash === '#reconnect') { history.replaceState(null, '', HERE); if (cfg().clientId) return spConnect(); }
+  await spFinishLogin(); render(); refresh();
+})();
 setInterval(() => { if (document.visibilityState === 'visible' && cfg().source) refresh(); }, 30000);
 setInterval(() => { const bar = K.$('#npbar'); if (bar && now && now.dur && now.playing) bar.style.width = Math.min(100, (now.pos + Date.now() - now.at) / now.dur * 100) + '%'; }, 1000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });

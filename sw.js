@@ -1,7 +1,7 @@
 /* Life Hub offline cache for every module (travel/, workout/, ...).
    Network first so a new version shows up right away; the saved copy is used when offline or on a weak signal.
    Live data (bus times, weather, AI, cloud sync) is never cached here: other sites go straight to the network. */
-var CACHE = 'life-hub-v16';
+var CACHE = 'life-hub-v17';
 var SHELL = ['./', 'index.html', 'hub.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
   'lib/kit.css', 'lib/kit.js', 'lib/agenda.js', 'lib/files.js', 'lib/bankimport.js', 'lib/ai.js', 'lib/sync.js', 'lib/ics.js',
   'travel/', 'travel/map.js', 'travel/icons/icon.svg', 'workout/', 'workout/icon-192.png',
@@ -87,6 +87,8 @@ function saveShared(req) {
     /* a YouTube song (YouTube app → Share → Life Hub) becomes an alarm sound */
     var yt = String(link + ' ' + text).match(/https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/\S+/);
     if (!files.length && yt) return 'alarm/#addsong=' + encodeURIComponent(yt[0]);
+    var spl = String(link + ' ' + text).match(/https?:\/\/open\.spotify\.com\/\S+/);
+    if (!files.length && spl) return 'alarm/#addsong=' + encodeURIComponent(spl[0]);
     var audio = files.length === 1 && (/^audio\//.test(files[0].type) || /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)$/i.test(files[0].name || ''));
     return idb().then(function (d) {
       return new Promise(function (res, rej) {

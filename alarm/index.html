@@ -76,9 +76,9 @@ function render() {
     <li>Without either, you only get a notification, and only if Life Hub is still running in the background.</li></ul>
     <button class="btn sm" type="button" data-act="test" style="margin-top:10px">🔊 Test the beeps</button></div>`;
   const tones = TONES.all();
-  html += `<div class="sec">Alarm sounds · ${tones.length}<button class="act" type="button" data-act="addYt">+ YouTube</button><button class="act" type="button" data-act="addFile" style="margin-left:12px">+ File</button></div>`;
+  html += `<div class="sec">Alarm sounds · ${tones.length}<button class="act" type="button" data-act="addSound">+ Add</button></div>`;
   html += tones.length ? `<div class="list">${tones.map(t => { const u = usedBy(t), bad = !playable(t);
-      return `<div class="tone"><span style="font-size:20px">${bad ? '⚠️' : t.kind === 'yt' ? '▶️' : '🎵'}</span><button class="body" type="button" data-tone="${t.id}" style="text-align:left;flex:1;min-width:0"><b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}</b><span class="small ${bad ? '' : 'muted'}" style="display:block;${bad ? 'color:var(--bad,#e66)' : ''}">${bad ? STATUS[t.status].replace('⚠️ ', '') + ' · tap to swap' : `${t.start ? '✂️ ' + fmtSec(t.start) + (t.end ? '–' + fmtSec(t.end) : '') : 'from the start'} · ${t.kind === 'yt' ? 'needs internet' : 'works offline'}${u.length ? ' · ⏰ ' + esc(u.join(', ')) : ''}`}</span></button>
+      return `<div class="tone"><span style="font-size:20px">${bad ? '⚠️' : t.kind === 'yt' ? '▶️' : t.kind === 'sp' ? '🟢' : '🎵'}</span><button class="body" type="button" data-tone="${t.id}" style="text-align:left;flex:1;min-width:0"><b style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}</b><span class="small ${bad ? '' : 'muted'}" style="display:block;${bad ? 'color:var(--bad,#e66)' : ''}">${bad ? STATUS[t.status].replace('⚠️ ', '') + ' · tap to swap' : `${t.start ? '✂️ ' + fmtSec(t.start) + (t.end ? '–' + fmtSec(t.end) : '') : 'from the start'} · ${t.kind === 'yt' ? 'YouTube' : t.kind === 'sp' ? 'Spotify app' : 'file · works offline'}${u.length ? ' · ⏰ ' + esc(u.join(', ')) : ''}`}</span></button>
       <button class="btn sm" type="button" data-play="${t.id}" aria-label="Play ${esc(t.name)}">🔊</button></div>`; }).join('')}</div>
       <div class="row-btns" style="margin:8px 0 14px"><button class="btn sm" type="button" data-act="check">✅ Check songs</button>${tones.length > 1 ? `<button class="btn sm" type="button" data-play="random">🎲 Play a random one</button>` : ''}</div>`
     : `<p class="hint" style="margin:0 2px 12px">Add songs from YouTube or your own sound files, then pick one per alarm. If a song can’t play (no internet), the beeps take over.</p>`;
@@ -149,6 +149,7 @@ async function startNight() {
   document.body.appendChild(el);
   try { await document.documentElement.requestFullscreen(); } catch {}
   prepareYt();
+  if (AL.all().some(a => a.on && (TONES.byId(a.sound) || {}).kind === 'sp')) spDevice().then(dv => { if (!dv) K.toast('🟢 Open the Spotify app once (then come back), so your Spotify alarm can start it. Beeps ring if it can’t.'); }).catch(e => K.toast('🟢 ' + e.message + ' Beeps ring as back-up.'));
   tickNight(); night.timer = setInterval(tickNight, 1000);
   planAhead(true); night.planner = setInterval(() => planAhead(true), 30 * 60000);   /* bus delays or cancellations move the alarm */
   document.addEventListener('visibilitychange', relock);
@@ -243,7 +244,7 @@ const soundName = a => { const s = (a && a.sound) || 'beep'; return s === 'beep'
 function soundOptions() {
   const songs = TONES.all();
   return [['beep', '🔔 Beeps']].concat(songs.length > 1 ? [['shuffle', '🔀 Shuffle my songs (each once, then repeat)'], ['random', '🎲 Random song']] : [])
-    .concat(songs.map(t => [t.id, (playable(t) ? (t.kind === 'yt' ? '▶️ ' : '🎵 ') : '⚠️ ') + t.name]));
+    .concat(songs.map(t => [t.id, (playable(t) ? (t.kind === 'yt' ? '▶️ ' : t.kind === 'sp' ? '🟢 ' : '🎵 ') : '⚠️ ') + t.name]));
 }
 
 /* ---------- adding songs ---------- */
@@ -302,6 +303,7 @@ function addFile(fileIn) {
 /* ---------- ✂️ song studio: listen, scrub, and set where the alarm starts (and optionally ends) ---------- */
 function studio(t) {
   stopTone();
+  if (t.kind === 'sp') return spStudio(t);
   const st = { start: t.start || 0, end: t.end || 0 }, isYt = t.kind === 'yt';
   const f = K.form({
     title: '✂️ ' + t.name, saveLabel: 'Save',
@@ -367,6 +369,114 @@ function studio(t) {
   });
 }
 
+/* ---------- 🟢 Spotify (Premium): Life Hub tells the Spotify app on your phone what to play (Spotify Connect) ---------- */
+function spLink(s) { const m = String(s).match(/(?:open\.spotify\.com\/(?:intl-[\w-]+\/)?|spotify:)(track|playlist|album)[\/:]([A-Za-z0-9]{22})/); return m ? { type: m[1], id: m[2], uri: `spotify:${m[1]}:${m[2]}` } : null; }
+const spReady = () => { const t = K.get('music.sp', null), c = K.get('music', {}) || {}; return !!(t && t.refresh && c.clientId); };
+const spCanPlay = () => spReady() && /user-modify-playback-state/.test((K.get('music.sp', {}) || {}).scope || '');
+async function spRefresh() {
+  const c = K.get('music', {}) || {}, t = K.get('music.sp', {}) || {};
+  const r = await fetch('https://accounts.spotify.com/api/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: c.clientId, grant_type: 'refresh_token', refresh_token: t.refresh }) });
+  const j = await r.json().catch(() => ({})); if (!r.ok) throw Object.assign(new Error('Spotify login expired. Connect again in Music.'), { login: true });
+  K.put('music.sp', { access: j.access_token, refresh: j.refresh_token || t.refresh, exp: Date.now() + (j.expires_in - 60) * 1000, scope: j.scope || t.scope });
+}
+async function spApi(method, path, body, retry) {
+  if (!spReady()) throw Object.assign(new Error('Connect Spotify in the Music app first.'), { login: true });
+  if (Date.now() > ((K.get('music.sp', {}) || {}).exp || 0)) await spRefresh();
+  const r = await fetch('https://api.spotify.com/v1/' + path, { method, headers: Object.assign({ Authorization: 'Bearer ' + K.get('music.sp', {}).access }, body ? { 'Content-Type': 'application/json' } : {}), body: body ? JSON.stringify(body) : undefined });
+  if (r.status === 401 && !retry) { await spRefresh(); return spApi(method, path, body, true); }
+  if (r.status === 204 || r.status === 202) return null;
+  const j = await r.json().catch(() => null);
+  if (!r.ok) { const m = (j && j.error && (j.error.message || j.error)) || ''; throw Object.assign(new Error(r.status === 404 ? 'Spotify isn’t open on your phone. Open the Spotify app once, then try again.' : r.status === 403 && /scope/i.test(m) ? 'Reconnect Spotify in the Music app so Life Hub may start songs.' : 'Spotify: ' + (m || r.status)), { status: r.status }); }
+  return j;
+}
+/* the phone's Spotify app (or whichever Spotify is active) */
+async function spDevice() {
+  const d = ((await spApi('GET', 'me/player/devices')) || {}).devices || [];
+  return d.find(x => x.is_active && !x.is_restricted) || d.find(x => /smartphone/i.test(x.type) && !x.is_restricted) || d.find(x => !x.is_restricted) || null;
+}
+let spOn = null;   /* { dev } while Life Hub is playing something on Spotify */
+async function spPlay(t, o, top, startVol, step) {
+  const dev = await spDevice(); if (!dev) throw new Error('Spotify isn’t open on your phone. Open the Spotify app once, then try again.');
+  const q = '?device_id=' + encodeURIComponent(dev.id), L = spLink(t.uri) || {};
+  if (L.type !== 'track') await spApi('PUT', 'me/player/shuffle' + q + '&state=true').catch(() => {});
+  const vol = dev.supports_volume !== false;
+  if (vol) await spApi('PUT', 'me/player/volume' + q + '&volume_percent=' + Math.round(startVol)).catch(() => {});
+  await spApi('PUT', 'me/player/play' + q, L.type === 'track' ? { uris: [t.uri], position_ms: (t.start || 0) * 1000 } : { context_uri: t.uri });
+  spOn = { dev };
+  await spApi('PUT', 'me/player/repeat' + q + '&state=' + (L.type === 'track' ? 'track' : 'context')).catch(() => {});
+  await new Promise(r => setTimeout(r, 2500));
+  const st = await spApi('GET', 'me/player').catch(() => null);
+  if (!st || !st.is_playing) { spOn = null; return false; }
+  let v = startVol;
+  if (step && vol) ramp = setInterval(() => { v = Math.min(top, v + step * 4); spApi('PUT', 'me/player/volume' + q + '&volume_percent=' + Math.round(v)).catch(() => {}); if (v >= top) clearInterval(ramp); }, 4000);
+  let bad = 0;
+  guard = setInterval(async () => {   /* loop the chosen part, and notice if Spotify stopped */
+    const s = await spApi('GET', 'me/player').catch(() => null); if (!spOn) return;
+    if (s && s.is_playing) { bad = 0; if (t.end && L.type === 'track' && s.progress_ms >= t.end * 1000) spApi('PUT', 'me/player/seek' + q + '&position_ms=' + (t.start || 0) * 1000).catch(() => {}); }
+    else { bad++; spApi('PUT', 'me/player/play' + q).catch(() => {}); if (o.ring && bad >= 3 && night && night.ringing) startBeeps(); }
+  }, 4000);
+  return true;
+}
+function spStop() { if (!spOn) return; const q = '?device_id=' + encodeURIComponent(spOn.dev.id); spOn = null; spApi('PUT', 'me/player/pause' + q).catch(() => {}); }
+async function spName(L) {
+  try { if (L.type === 'track') { const j = await spApi('GET', 'tracks/' + L.id); return `${j.name} – ${(j.artists || []).map(a => a.name).join(', ')}`; }
+    const j = await spApi('GET', `${L.type}s/${L.id}${L.type === 'playlist' ? '?fields=name' : ''}`); return (L.type === 'playlist' ? '📃 ' : '💿 ') + j.name; } catch { return L.type === 'track' ? 'Spotify song' : 'Spotify ' + L.type; }
+}
+function addSpotify(prefill) {
+  if (!spReady()) return K.form({ title: 'Connect Spotify first', saveLabel: 'Open Music', fields: [{ type: 'html', k: 'x', html: `<p>Connect your Spotify account in the <b>Music</b> app, then come back here.</p>` }], save() { location.href = '../music/'; } });
+  K.form({
+    title: 'Add Spotify songs', saveLabel: 'Add',
+    fields: [{ k: 'links', label: 'Spotify links (songs, playlists or albums; one per line)', type: 'textarea', value: prefill || '', placeholder: 'https://open.spotify.com/track/…', required: true, attrs: 'rows="4" spellcheck="false"' },
+      { type: 'html', k: 'h', html: `<p class="small muted" style="margin:0">Quickest: in the <b>Spotify app</b> tap ⋯ → <b>Share → Life Hub</b>. When the alarm rings, Life Hub starts the song in your Spotify app (no ads with Premium). A playlist plays shuffled, so every morning is different.</p>` }],
+    save(v) {
+      const items = [...new Map(v.links.split(/\s+/).map(spLink).filter(Boolean).map(L => [L.uri, L])).values()];
+      if (!items.length) { K.toast('No Spotify links found. Use Share → Copy link in Spotify.'); return false; }
+      addSpSongs(items);
+    },
+  });
+}
+async function addSpSongs(items) {
+  const fresh = items.filter(L => !TONES.all().some(t => t.uri === L.uri)); if (!fresh.length) return K.toast('Already in your list.');
+  const added = fresh.map(L => { const t = { id: 'sp_' + L.id, kind: 'sp', uri: L.uri, start: 0, name: 'Loading name…', status: 'ok', at: Date.now() }; TONES.upsert(t); return t; });
+  render(); K.toast(`Added ${K.plural(added.length, 'Spotify sound')}`);
+  for (const t of added) { const x = TONES.byId(t.id); x.name = (await spName(spLink(t.uri))).slice(0, 70); TONES.upsert(x); }
+  render();
+  if (!spCanPlay()) spReconnectHint();
+  else if (added.length === 1 && spLink(added[0].uri).type === 'track') studio(TONES.byId(added[0].id));
+}
+function spStudio(t) {
+  const L = spLink(t.uri) || {}, track = L.type === 'track', st = { start: t.start || 0, end: t.end || 0 };
+  const f = K.form({
+    title: '✂️ ' + t.name, saveLabel: 'Save',
+    fields: [
+      { type: 'html', k: 'p', html: !spCanPlay() ? `<div class="card" style="margin-bottom:10px"><b>Reconnect Spotify first</b><p class="small muted" style="margin:4px 0 8px">Life Hub needs permission to start songs in your Spotify app.</p><a class="btn sm" href="../music/#reconnect">Reconnect in Music</a></div>` : track
+        ? `<p class="small muted" style="margin-top:-6px">Play it in your Spotify app, move to the best part there (or here), then tap <b>📍 Use where Spotify is now</b>.</p>
+          <div class="row-btns" style="margin-bottom:6px"><button class="btn sm primary" type="button" data-sphear>▶ Play the alarm part</button><button class="btn sm" type="button" data-sphere>📍 Use where Spotify is now</button><button class="btn sm" type="button" data-spend>🏁 End here</button><button class="btn sm" type="button" data-spstop>⏹ Stop</button></div><p class="small" id="spInfo" style="margin:4px 0 12px"></p>`
+        : `<p class="small muted" style="margin-top:-6px">A ${L.type} plays shuffled, so you wake up to a different song each day.</p><div class="row-btns" style="margin-bottom:12px"><button class="btn sm primary" type="button" data-sphear>▶ Test</button><button class="btn sm" type="button" data-spstop>⏹ Stop</button></div>` },
+      ...(track ? [{ k: 'start', label: 'Alarm starts at', value: fmtSec(st.start), half: true, attrs: 'inputmode="numeric"', hint: 'e.g. 1:05' },
+        { k: 'end', label: 'Ends at (optional)', value: st.end ? fmtSec(st.end) : '', half: true, attrs: 'inputmode="numeric"', placeholder: 'whole song', hint: 'Loops back to the start' }] : []),
+      { k: 'name', label: 'Name', value: t.name, required: true },
+    ],
+    save(v) { const x = TONES.byId(t.id) || t; x.name = v.name; if (track) { x.start = parseSec(v.start); x.end = parseSec(v.end); if (x.end && x.end <= x.start + 2) x.end = 0; } TONES.upsert(x); stopTone(); render(); K.toast('Saved'); },
+    del: () => { const u = usedBy(t); if (!confirm(`Delete “${t.name}”?${u.length ? ` ${u.join(', ')} will use beeps instead.` : ''}`)) return false; stopTone(); TONES.remove(t.id); AL.all().filter(a => a.sound === t.id).forEach(a => { a.sound = 'beep'; AL.upsert(a); }); render(); },
+  });
+  const info = () => { const i = f.querySelector('#spInfo'); if (i) i.innerHTML = `Alarm plays <b>${fmtSec(st.start)}</b> → <b>${st.end ? fmtSec(st.end) : 'end'}</b>${st.end ? ', then loops' : ', then repeats'}.`; };
+  const sync = () => { f.elements.start.value = fmtSec(st.start); f.elements.end.value = st.end ? fmtSec(st.end) : ''; info(); };
+  info();
+  if (track) { f.elements.start.addEventListener('change', () => { st.start = parseSec(f.elements.start.value); info(); }); f.elements.end.addEventListener('change', () => { st.end = parseSec(f.elements.end.value); info(); }); }
+  const where = async () => { const s = await spApi('GET', 'me/player'); if (!s || !s.item) throw new Error('Nothing is playing in Spotify right now.'); if (s.item.uri !== t.uri) throw new Error('Spotify is playing a different song. Tap ▶ first.'); return Math.floor(s.progress_ms / 1000); };
+  f.addEventListener('click', async e => {
+    const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+    try {
+      if ('sphear' in d) { const ok = await playTone(Object.assign({}, t, st)); K.toast(ok ? '▶ Playing in Spotify' : lastSpErr || 'Spotify didn’t start. Open the Spotify app once, then try again.'); }
+      else if ('spstop' in d) stopTone();
+      else if ('sphere' in d) { st.start = await where(); if (st.end && st.end <= st.start + 2) st.end = 0; sync(); K.toast('Alarm starts at ' + fmtSec(st.start)); }
+      else if ('spend' in d) { const c = await where(); if (c <= st.start + 2) return K.toast('The end has to be after the start.'); st.end = c; sync(); K.toast('Alarm loops at ' + fmtSec(st.end)); }
+    } catch (err) { K.toast(err.message); }
+  });
+}
+function spReconnectHint() { K.form({ title: 'One more Spotify step', saveLabel: 'Reconnect now', fields: [{ type: 'html', k: 'x', html: `<p>Life Hub needs permission to <b>start songs</b> in your Spotify app. Open Music → Spotify and connect again (same steps, takes 10 seconds).</p>` }], save() { location.href = '../music/#reconnect'; } }); }
+
 /* ---------- the player that rings (hidden YouTube player, or an <audio> for files) ---------- */
 let ytApi = null;
 function loadYtApi() {
@@ -376,7 +486,7 @@ function loadYtApi() {
     setTimeout(() => { if (!(window.YT && YT.Player)) { ytApi = null; rej(new Error('YouTube took too long')); } }, 15000); });
   return ytApi;
 }
-let yt = null, audioEl = null, ramp = null, guard = null, nowT = null;
+let yt = null, audioEl = null, ramp = null, guard = null, nowT = null, lastSpErr = '';
 async function ytPlayer() {
   if (yt) return yt;
   await loadYtApi();
@@ -395,6 +505,7 @@ async function playTone(t, o = {}) {
   const top = o.muted ? 0 : (o.vol || 100), fade = o.ring ? (o.fade ?? 40) : 0, startVol = o.muted ? 0 : fade ? Math.min(top, 12) : top;
   let v = startVol; const step = fade ? (top - startVol) / fade : 0;
   try {
+    if (t.kind === 'sp') { if (o.muted) return true; return await spPlay(t, o, top, startVol, step); }
     if (t.kind === 'yt') {
       const p = await ytPlayer(); p._tone = t; p._err = null; if (!o.muted) document.getElementById('ytbox').classList.add('show');
       p.setVolume(startVol); o.muted ? p.mute() : p.unMute(); p.loadVideoById({ videoId: t.yt, startSeconds: t.start || 0 });
@@ -416,10 +527,10 @@ async function playTone(t, o = {}) {
     if (step) ramp = setInterval(() => { v = Math.min(top, v + step); a.volume = v / 100; if (v >= top) clearInterval(ramp); }, 1000);
     guard = setInterval(() => { if (t.end && a.currentTime >= t.end) a.currentTime = t.start || 0; if (a.paused) a.play().catch(() => {}); }, 500);
     return true;
-  } catch { stopTone(); return false; }
+  } catch (e) { if (t.kind === 'sp') lastSpErr = e.message; stopTone(); return false; }
 }
 function stopTone() {
-  clearInterval(ramp); clearInterval(guard); ramp = guard = null; clearTimeout(nowT); document.getElementById('nowbar')?.remove();
+  clearInterval(ramp); clearInterval(guard); ramp = guard = null; clearTimeout(nowT); spStop(); document.getElementById('nowbar')?.remove();
   try { if (yt) { yt.stopVideo(); yt._tone = null; yt.unMute(); } } catch {} document.getElementById('ytbox')?.classList.remove('show');
   if (audioEl) { try { audioEl.pause(); URL.revokeObjectURL(audioEl.src); } catch {} audioEl = null; }
 }
@@ -428,6 +539,7 @@ async function preview(id) {
   if (!id || id === 'beep') return testSound();
   const t = ['random', 'shuffle'].includes(id) ? pickTone({ sound: 'random' }) : TONES.byId(id); if (!t) return K.toast('Add some songs first.');
   const ok = await playTone(t);
+  if (!ok && t.kind === 'sp') return K.toast(lastSpErr || 'Spotify didn’t start. Open the Spotify app once, then try again.');
   if (!ok) { render(); return K.toast(t.kind === 'yt' ? (TONES.byId(t.id) || t).status === 'blocked' ? 'This video’s owner blocks playing it in other apps ⚠️ Tap the song to find another version.' : 'YouTube didn’t play. Are you online? The beeps would ring instead.' : 'That sound file couldn’t play.'); }
   const bar = document.createElement('div'); bar.id = 'nowbar';
   bar.innerHTML = `<span>♪ <b>${esc(t.name)}</b> <span class="muted small">from ${fmtSec(t.start)}</span></span><button class="btn sm" type="button" data-stopnow>⏹ Stop</button>`;
@@ -450,6 +562,7 @@ function testSound() {
 
 document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+  if ('closesheet' in d) b.closest('.sheet-bg')?.remove();
   if (d.tog) { const a = AL.byId(d.tog); a.on = !a.on; if (a.on && !a.smart && !(a.days || []).length) a.once = K.alarmNextOnce(a.time); AL.upsert(a); render(); if (a.on) { const nx = K.nextAlarm(); if (nx) K.toast(`Next alarm in ${until(nx.at)}`); } }
   else if (d.edit) edit(AL.byId(d.edit));
   else if (d.sys) systemAlarm(AL.byId(d.sys));
@@ -460,6 +573,8 @@ document.addEventListener('click', e => {
   else if (d.act === 'snooze') { const m = +((night.ringingAlarm || {}).snooze || 9); stopRing(); night.snoozeUntil = Date.now() + m * 60000; }
   else if (d.act === 'test') testSound();
   else if (d.act === 'addYt') addYouTube();
+  else if (d.act === 'addSp') addSpotify();
+  else if (d.act === 'addSound') K.form({ title: 'Add an alarm sound', saveLabel: 'Close', fields: [{ type: 'html', k: 'x', html: `<div class="list">${[['addSp', '🟢', 'Spotify', 'Songs or playlists, played in your Spotify app (Premium)'], ['addYt', '▶️', 'YouTube', 'Paste links or a whole playlist'], ['addFile', '🎵', 'Sound file', 'An mp3 on your phone: no ads, works offline']].map(([a, i, t, m]) => `<button class="item" type="button" data-act="${a}" data-closesheet style="width:100%"><span style="font-size:22px">${i}</span><span class="body"><span class="title">${t}</span><span class="meta"><span>${m}</span></span></span></button>`).join('')}</div>` }], save: () => {} });
   else if (d.act === 'addFile') addFile();
   else if (d.play) preview(d.play);
   else if (d.tone) studio(TONES.byId(d.tone));
@@ -483,9 +598,10 @@ fixNames();
 (async function fromShare() {
   const h = decodeURIComponent(location.hash.slice(1)); if (!h) return;
   history.replaceState(null, '', location.pathname);
-  if (h.startsWith('addsong=')) { const link = h.slice(8); const id = ytId(link); if (id) addSongs([{ id, start: ytStart(link) }], []); else addYouTube(null, link); }
+  if (h.startsWith('addsong=') && spLink(h)) addSpSongs([spLink(h)]);
+  else if (h.startsWith('addsong=')) { const link = h.slice(8); const id = ytId(link); if (id) addSongs([{ id, start: ytStart(link) }], []); else addYouTube(null, link); }
   else if (h.startsWith('audio=')) { const fl = await K.files.get(h.slice(6)).catch(() => null); if (fl) { const t = { id: K.uid(), kind: 'file', fileId: fl.id, name: String(fl.name || 'Sound').replace(/\.[a-z0-9]+$/i, '').slice(0, 70), start: 0, status: 'ok', at: Date.now() }; TONES.upsert(t); render(); K.toast('Sound added. Pick the best part ✂️'); studio(t); } }
-  else if (h === 'sounds') document.querySelector('[data-act="addYt"]')?.scrollIntoView({ block: 'center' });
+  else if (h === 'sounds') document.querySelector('[data-act="addSound"]')?.scrollIntoView({ block: 'center' });
 })();
 setInterval(() => { if (!night && document.visibilityState === 'visible') render(); }, 30000);
 </script>
