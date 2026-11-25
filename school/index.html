@@ -155,6 +155,7 @@ function importLink() {
       { type: 'html', k: 'h', html: `<p class="small muted" style="margin:-4px 0 0">The link is private to you: it’s saved in your own cloud and only used to read your timetable.</p>` }],
     async save(v) {
       const url = v.url.trim(); if (!/^(https?|webcal):\/\//i.test(url)) { K.toast('Paste the whole link, starting with https:// or webcal://'); return false; }
+      if (looksLikePage(url)) { setTimeout(pageNotLink, 250); return; }
       sc.icsUrl = url; K.saveSchool(sc);
       try { saveFeed(await fetchFeed(url)); }
       catch (e) {
@@ -164,6 +165,21 @@ function importLink() {
       }
     },
   });
+}
+/* the Osiris timetable page (needs your login) instead of its calendar link */
+function looksLikePage(url) {
+  const u = url.toLowerCase();
+  if (/\.ics(\?|$)|ical|webcal:|calendar|agenda|feed|export|token=|key=/.test(u)) return false;
+  return /osiris-student\.nl\/?(#?\/?(rooster|home|dashboard)?\/?)?$/.test(u.replace(/^https?:\/\//, '')) || /\/rooster\/?$/.test(u);
+}
+function pageNotLink() {
+  K.form({ title: 'That’s the page, not the calendar link', saveLabel: 'OK',
+    fields: [{ type: 'html', k: 'x', html: `<p style="margin-top:-6px">This address opens your timetable <b>page</b>, which needs your school login. Life Hub needs the <b>calendar link</b> that Osiris makes from that page.</p>
+      <ol class="small muted" style="line-height:1.6;padding-left:20px">
+        <li>Open the page and log in (on a phone: Chrome ⋮ → <b>Desktop site</b>).</li>
+        <li>Above the timetable, top right, look for <b>Exporteren</b>, <b>Agenda koppelen</b>, <b>Abonneren</b>, <b>iCal</b>, a 📅 icon or <b>⋯</b>.</li>
+        <li>Choose <b>link</b> / <b>iCal</b> and copy the long address it shows (often with <b>ical</b>, <b>.ics</b> or a long code).</li></ol>
+      <p class="small muted">No such button? Use <b>📷 Screenshot</b> instead: take a screenshot of your week and the AI reads it.</p>` }], save: () => {} });
 }
 function importFile() {
   const i = document.createElement('input'); i.type = 'file'; i.accept = '.ics,text/calendar';
@@ -366,8 +382,10 @@ function needFor(subject) {
 /* ---------- setup ---------- */
 function setupHtml() {
   const sc = K.school(), f = K.feed();
-  let html = `<div class="sec">Timetable</div><div class="card"><div class="big" style="font-size:16px">${f ? (f.source === 'link' ? '📅 Linked to your school calendar' : f.source === 'photo' ? '📷 Imported from a screenshot' : '📄 Imported from a calendar file') : '✍️ Typed in by hand'}</div>
-    <div class="muted small" style="margin-top:4px">${f ? `${K.plural(f.lessons.length, 'lesson')} until ${esc(K.fmtDate(f.to))}` : `${K.plural(sc.lessons.length, 'lesson')} a week`}</div>
+  let html = `<div class="sec">Timetable</div><div class="card"><div class="big" style="font-size:16px">${f && f.lessons && f.lessons.length ? (f.source === 'link' ? '📅 Linked to your school calendar' : f.source === 'photo' ? '📷 Imported from a screenshot' : '📄 Imported from a calendar file') : '✍️ Typed in by hand'}</div>
+    <div class="muted small" style="margin-top:4px">${f && f.lessons && f.lessons.length ? `${K.plural(f.lessons.length, 'lesson')} until ${esc(K.fmtDate(f.to))}` : `${K.plural(sc.lessons.length, 'lesson')} a week`}</div>
+    ${sc.icsUrl && f && f.error ? `<div class="small" style="color:var(--bad);margin-top:6px">⚠️ Your calendar link didn’t work (${esc(f.error)}). ${looksLikePage(sc.icsUrl) ? 'It’s the timetable page, not the calendar link.' : 'Check the link in Osiris.'}</div>`
+      : sc.icsUrl && !(f && f.lessons && f.lessons.length) ? `<div class="small" style="color:var(--warn);margin-top:6px">⏳ Calendar link saved. Waiting for your private job to read it (within about 30 minutes).</div>` : ''}
     <button class="btn sm" type="button" data-act="import" style="margin-top:10px">📥 ${f ? 'Change' : 'Import timetable'}</button></div>`;
   html += `<div class="sec">Subjects<button class="act" type="button" data-act="addSubject">+ Add</button></div>`;
   const subs = subjects();
