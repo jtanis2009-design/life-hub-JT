@@ -956,7 +956,7 @@ function setupItems() {
     ['🌙', 'Reminders when closed', 'Settings → Reminders → when Life Hub is closed', !!(get('lh.push', null) || {}).on, '#settings:remind'],
     ['☀️', 'Morning brief', 'Settings → Morning brief', K.briefCfg().on, '#settings:brief'],
     ['🤖', 'AI key for the assistant', 'Settings → AI assistant (free Gemini key)', !!localStorage.getItem('wl_aikey'), '#settings:ai'],
-    ['🏫', 'Add your timetable', 'School → + (lessons repeat every week)', K.school().lessons.length > 0, 'school/'],
+    ['🏫', 'Add your timetable', 'School → Import timetable, or + to type lessons', K.school().lessons.length > 0 || !!((K.get('schoolfeed', null) || {}).lessons || []).length || !!K.school().icsUrl, 'school/'],
     ['⏰', 'School alarm', 'Alarms → + → School alarm (uses your bus)', K.alarms.all().some(a => a.smart), 'alarm/'],
     ['🔒', 'PIN lock', 'Settings → Privacy lock (optional)', Hub.hasPin(), '#settings:account'],
   ];
