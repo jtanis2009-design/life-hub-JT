@@ -34,21 +34,21 @@
 <script src="../lib/bankimport.js"></script>
 <script>
 const { esc, svg, eur } = K;
-const OUT = [['Food & drinks', '🍔', /kebab|mcdonald|\bmc ?d|burger|pizza|domino|new york pizza|snack|lunch|döner|doner|subway|kfc|frites|patat|coffee|koffie|starbucks|monster|red ?bull|drink|broodje|food|eten|thuisbezorgd|uber ?eats|deliveroo|febo|smullers|wok|sushi|restaurant|cafetaria|bakker|kiosk|hema/i],
-  ['Groceries', '🛒', /albert heijn|\bah\b|ah to go|jumbo|lidl|aldi|\bplus\b|dirk|grocer|boodschap|spar\b|coop\b|picnic|vomar|hoogvliet|deen|dekamarkt|poiesz|ekoplaza|crisp/i],
-  ['Transport', '🚌', /\bbus\b|\bov\b|ov-?chip|ns\b|ns groep|ns reizigers|train|trein|metro|\bret\b|arriva|connexxion|qbuzz|keolis|ebs|htm|gvb|fiets|bike|swapfiets|benzine|fuel|shell|esso|bp\b|tinq|tango|uber\b|bolt\b|parkeer|parking/i],
-  ['Going out', '🎉', /cinema|bios|pathé|pathe|vue\b|kinepolis|party|feest|club|bowling|concert|ticket|ticketmaster|eventim|festival|escape|lasergame/i],
-  ['Clothes', '👕', /shirt|shoes|schoen|jacket|jas|broek|pants|hoodie|zara|h&m|h & m|nike|adidas|kleding|primark|jd sports|zalando|about you|snipes|foot ?locker|we fashion|c&a|only\b|jack ?& ?jones|bershka|pull ?& ?bear|uniqlo|vinted/i],
-  ['Gaming', '🎮', /game|steam|valve|psn|playstation|sony interactive|xbox|microsoft\*xbox|nintendo|fortnite|epic games|v-?bucks|robux|roblox|riot|blizzard|ea\.com|gamemania|g2a|instant gaming|twitch/i],
+const OUT = [['Food & drinks', '🍔', /kebab|mcdonald|\bmc ?d|burger|pizza|domino|new york pizza|snack|lunch|döner|doner|subway|kfc|frites|patat|coffee|koffie|starbucks|monster|red ?bull|drink|broodje|food|eten|thuisbezorgd|uber ?eats|deliveroo|febo|smullers|wok|sushi|restaurant|cafetaria|bakker|kiosk|hema|candy|snoep|chicken|oriental|ladage|\bdino\b|pizzeria|döner|kapsalon|bubble ?tea|ice ?cream|ijssalon|tabak|gemakswinkel/i],
+  ['Groceries', '🛒', /albert heijn|\bah\b|ah to go|jumbo|lidl|aldi|rewe|edeka|carrefour|delhaize|colruyt|\bplus\b|dirk|grocer|boodschap|spar\b|coop\b|picnic|vomar|hoogvliet|deen|dekamarkt|poiesz|ekoplaza|crisp|supermarkt|dagwinkel|toko|amazing oriental/i],
+  ['Transport', '🚌', /\bbus\b|\bov\b|ov-?chip|ns\b|ns groep|ns reizigers|train|trein|metro|\bret\b|arriva|connexxion|qbuzz|keolis|ebs|htm|gvb|fiets|bike|swapfiets|ovpay|trans link|de lijn|\bnmbs|\bsncb|flixbus|benzine|fuel|shell|esso|bp\b|tinq|tango|uber\b|bolt\b|parkeer|parking/i],
+  ['Going out', '🎉', /cinema|bios|pathé|pathe|vue\b|kinepolis|party|feest|club|bowling|concert|ticket|ticketmaster|eventim|festival|escape|lasergame|blijdorp|diergaarde|jump ?xl|efteling|walibi|zoo\b|museum|trampoline|karting/i],
+  ['Clothes', '👕', /shirt|shoes|schoen|jacket|jas|broek|pants|hoodie|zara|h&m|h & m|nike|adidas|kleding|primark|jd sports|zalando|about you|snipes|foot ?locker|we fashion|c&a|only\b|jack ?& ?jones|bershka|pull ?& ?bear|uniqlo|vinted|new ?yorker|bershka|scotch|livera|hunkemöller/i],
+  ['Gaming', '🎮', /game|steam|valve|psn|playstation|sony interactive|xbox|microsoft\*xbox|nintendo|fortnite|epic games|v-?bucks|robux|roblox|riot|blizzard|ea\.com|gamemania|g2a|instant gaming|twitch|xsolla|pgsharp|codashop|razer|supercell/i],
   ['Subscriptions', '📱', /spotify|netflix|disney|youtube|abonnement|subscription|icloud|apple\.com|google \*|google play|prime video|amazon prime|videoland|chatgpt|openai|discord|snapchat|duolingo|lebara|lyca|simyo|ben\b|odido|t-mobile|kpn|vodafone|youfone/i],
   ['Gym & health', '💪', /gym|basic.?fit|sportcity|fit ?for ?free|anytime fitness|trainmore|protein|whey|creatine|supplement|myprotein|bodyandfit|body & fit|xxl nutrition|etos|kruidvat|trekpleister|apotheek|pharmacy/i],
   ['School', '📚', /book|boek|bruna|school|pen\b|schrift|laptop|printer|grafisch lyceum|studiegeld|lesgeld|duo\b|canon|adobe/i],
-  ['Shopping', '🛍️', /bol\.com|\bbol\b|amazon|coolblue|mediamarkt|action\b|blokker|ikea|aliexpress|temu|shein|wish\b|marktplaats|apple store|alternate|megekko|azerty/i],
+  ['Shopping', '🛍️', /bol\.com|\bbol\b|amazon|coolblue|mediamarkt|action\b|blokker|ikea|aliexpress|temu|shein|wish\b|marktplaats|apple store|alternate|megekko|azerty|miniso|normal\b|fruugo|alipay|praxis|gamma|hornbach|flying tiger|xenos|søstrene|sostrene/i],
   ['Gifts', '🎁', /gift|cadeau|present|bloemen|flowers|intertoys|lego/i],
   ['Tikkie & friends', '🤝', /tikkie|betaalverzoek|terugbetaling|lend|geleend/i],
   ['Cash', '💶', /\batm\b|geldautomaat|geldopname|opname|cash/i],
   ['Other', '💸', /$^/]];
-const IN = [['Job', '💼', /salary|salaris|loon|job|werk|shift|uitzend|randstad|tempo.?team|youngcapital|olympia|start people|payroll|nettoloon|vakantiegeld/i], ['Pocket money', '👛', /pocket|zakgeld/i],
+const IN = [['Job', '💼', /salary|salaris|loon|job|werk|shift|uitzend|randstad|tempo.?team|youngcapital|olympia|start people|payroll|nettoloon|vakantiegeld/i], ['Pocket money', '👛', /pocket|zakgeld|kleedgeld|kostgeld/i],
   ['Gift', '🎁', /gift|cadeau|birthday|verjaardag|sinterklaas|kerst/i], ['Sold something', '🏷️', /sold|verkocht|marktplaats|vinted|ebay/i], ['Refund', '↩️', /refund|retour|terugbetaling|restitutie|terugstorting|creditnota/i],
   ['Tikkie & friends', '🤝', /tikkie|betaalverzoek/i], ['Other', '💰', /$^/]];
 const catOf = (list, text) => (list.find(c => c[2].test(text)) || list[list.length - 1])[0];
@@ -226,16 +226,24 @@ function pickFile(accept, capture, multiple) {
   });
 }
 async function pickBankFile() {
-  const [file] = await pickFile('.csv,.tab,.txt,text/csv,text/plain,text/tab-separated-values');
+  const [file] = await pickFile('.csv,.tab,.txt,.pdf,text/csv,text/plain,text/tab-separated-values,application/pdf');
   if (!file) return;
   let parsed;
-  try { parsed = await K.bank.parse(file); } catch (err) { K.form({ title: 'Couldn’t read that file', saveLabel: 'OK', fields: [{ type: 'html', k: 'x', html: `<p>${esc(err.message)}</p>${bankHelp()}` }], save: () => {} }); return; }
+  try { parsed = await readBankFile(file); } catch (err) { K.form({ title: 'Couldn’t read that file', saveLabel: 'OK', fields: [{ type: 'html', k: 'x', html: `<p>${esc(err.message)}</p>${bankHelp()}` }], save: () => {} }); return; }
   showImport(parsed);
+}
+async function readBankFile(file) {
+  if (/pdf/i.test(file.type) || /\.pdf$/i.test(file.name)) {
+    K.toast('Reading PDF…');
+    try { return await K.bank.parsePdf(file, (n, t) => K.toast(`Reading PDF… page ${n} of ${t}`)); }
+    finally { K.$('#toast')?.classList.remove('on'); }
+  }
+  return K.bank.parse(file);
 }
 function bankHelp() {
   return `<details style="margin-top:6px"><summary style="font-weight:700;cursor:pointer">How do I get the file from my bank?</summary><div class="small muted" style="line-height:1.6;margin-top:8px">
     <b>ING</b>: Mijn ING (website) → your account → Af- en bijschrijvingen downloaden → format <b>Kommagescheiden CSV</b>.<br>
-    <b>Rabobank</b>: Rabo Internetbankieren → Betalen en sparen → Download transacties → <b>CSV</b>.<br>
+    <b>Rabobank</b>: the <b>PDF statement</b> (Rekeningafschrift) works directly. Or Rabo Internetbankieren → Betalen en sparen → Download transacties → <b>CSV</b>.<br>
     <b>ABN AMRO</b>: Internet Banking → Bij- en afschrijvingen → Downloaden → <b>TXT</b> (tab).<br>
     <b>bunq</b>: app → the account → ⋯ → Export statement → <b>CSV</b>.<br>
     <b>SNS, ASN, RegioBank, Knab, Triodos</b>: look for “transacties downloaden” or “exporteren” and pick <b>CSV</b>.<br>
@@ -373,6 +381,14 @@ async function checkInbox() {
     const url = it.url || (String(it.text || '').match(/https?:\/\/\S+/) || [''])[0];
     if (it.fileId) {
       const f = await K.files.get(it.fileId);
+      if (f && /pdf/i.test(f.type || f.name)) {   /* a bank statement shared from WhatsApp / Gmail? */
+        try {
+          const parsed = await K.bank.parsePdf(new File([f.blob], f.name, { type: 'application/pdf' }));
+          if (parsed.items.length >= 3 && confirm(`This looks like a bank statement with ${parsed.items.length} payments. Import them into Money?`)) {
+            await K.files.del(it.fileId); tab = 'month'; render(); showImport(parsed); continue;
+          }
+        } catch {}
+      }
       const r = { id: K.uid(), fileId: it.fileId, fileName: f ? f.name : 'shared file', type: f ? f.type : '', size: f ? f.size : 0, url, shop: guessShop(it.title || (f && f.name)), date: K.ymd(), amount: '', txId: '', note: it.text && !url ? String(it.text).slice(0, 120) : '', warranty: '' };
       K.receipts.upsert(r); tab = 'receipts'; render(); if (items.length === 1) editReceipt(r, null, true);
     } else if (url) {
