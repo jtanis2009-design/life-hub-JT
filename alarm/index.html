@@ -58,8 +58,9 @@ function render() {
     <div class="row-btns" style="margin-top:12px"><button class="btn primary" type="button" data-act="night">🌙 Start night mode</button>${nx ? `<button class="btn" type="button" data-sys="${nx.a.id}">⏰ Set in Clock app</button>` : ''}</div></div>`;
   if (!list.length) html += `<div class="empty"><b>No alarms yet</b>Tap + for a normal alarm, or add a smart school alarm that follows your timetable.<br><br><button class="btn primary" type="button" data-act="school">🎓 Add school alarm</button></div>`;
   else html += `<div class="list">${list.map(a => {
-    const t = a.smart ? K.alarmTime(a, nextDayWith(a)) : a.time;
-    return `<div class="alarm ${a.on ? '' : 'off'}"><button class="body" type="button" data-edit="${a.id}"><div class="tm">${t || '--:--'}</div><span>${esc(a.label || 'Alarm')} · ${a.smart ? '🎓 follows your first lesson' : daysText(a.days)}</span></button>
+    const d = a.smart ? nextDayWith(a) : null, t = a.smart ? K.alarmTime(a, d) : a.time, mp = a.smart && K.morningPlan(d);
+    const how = a.smart ? (mp ? `🚌 ${K.fmtDay(d)}: leave ${mp.leave}${mp.line ? ' · ' + mp.line : ''} · at school ${mp.arrive}` : '🎓 follows your first lesson') : daysText(a.days);
+    return `<div class="alarm ${a.on ? '' : 'off'}"><button class="body" type="button" data-edit="${a.id}"><div class="tm">${t || '--:--'}</div><span>${esc(a.label || 'Alarm')} · ${esc(how)}</span></button>
       <button class="sw" type="button" role="switch" aria-checked="${!!a.on}" data-tog="${a.id}" aria-label="${a.on ? 'Turn off' : 'Turn on'} ${esc(a.label || 'alarm')}"></button></div>`;
   }).join('')}</div>`;
   html += `<div class="card"><div class="k">How Life Hub alarms work</div><ul class="small muted" style="margin:8px 0 0;padding-left:18px;line-height:1.6">
@@ -69,7 +70,7 @@ function render() {
     <button class="btn sm" type="button" data-act="test" style="margin-top:10px">🔊 Test the sound</button></div>`;
   K.$('#app').innerHTML = html;
 }
-function nextDayWith(a) { for (let i = 0; i < 8; i++) { const d = K.addDays(K.ymd(), i); if (K.alarmTime(a, d)) return d; } return K.ymd(); }
+function nextDayWith(a) { const now = K.hm(new Date()); for (let i = 0; i < 8; i++) { const d = K.addDays(K.ymd(), i), t = K.alarmTime(a, d); if (t && (i > 0 || t > now)) return d; } return K.ymd(); }   /* the next time it rings, not one that already passed today */
 function daysText(d) { d = d || []; if (!d.length) return 'once'; if (d.length === 7) return 'every day'; if ([1, 2, 3, 4, 5].every(x => d.includes(x)) && d.length === 5) return 'weekdays'; if (d.length === 2 && d.includes(0) && d.includes(6)) return 'weekends'; return [1, 2, 3, 4, 5, 6, 0].filter(x => d.includes(x)).map(x => K.DAYS_SHORT[x]).join(', '); }
 function until(t) { const m = Math.round((t - Date.now()) / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)}h ${K.pad(m % 60)}m`; }
 
@@ -79,7 +80,10 @@ function edit(a, preset) {
   const f = K.form({
     title: isNew ? (a.smart ? 'School alarm' : 'New alarm') : 'Edit alarm',
     fields: [
-      ...(a.smart ? [{ type: 'html', k: '_s', html: `<p class="small muted" style="margin-top:-6px">Rings ${K.sleepCfg().wakeBefore} minutes before your first lesson (change the minutes in Sleep → settings). Days without school use the time below, or no alarm if it’s empty.</p>` }] : []),
+      ...(a.smart ? [{ type: 'html', k: '_s', html: `<p class="small muted" style="margin-top:-6px">Looks up the bus that gets you to your first lesson on time (your trip in Travel) and wakes you in time to catch it. Without a connection it rings ${K.sleepCfg().wakeBefore} minutes before your first lesson. Days without school use the time below, or no alarm if it’s empty.</p>` },
+        { k: 'ready', label: 'Minutes to get ready', type: 'number', value: K.morningCfg().ready, half: true, hint: 'Wake-up → out the door' },
+        { k: 'early', label: 'Minutes early at school', type: 'number', value: K.morningCfg().early, half: true, hint: 'Bus arrives before lesson' },
+        { k: 'bus', label: '🚌 Use real bus times', type: 'checkbox', value: K.morningCfg().bus !== false }] : []),
       { k: 'time', label: a.smart ? 'Time on days without school (optional)' : 'Time', type: 'time', value: a.time, required: !a.smart },
       ...(a.smart ? [] : [{ type: 'html', k: '_d', html: `<div class="f"><label>Repeat on</label><div class="days" data-days>${[1, 2, 3, 4, 5, 6, 0].map(d => `<button type="button" data-d="${d}" aria-pressed="${(a.days || []).includes(d)}">${K.DAYS_SHORT[d].slice(0, 2)}</button>`).join('')}</div><div class="small muted" style="margin-top:4px">No days = rings once.</div></div>` }]),
       { k: 'label', label: 'Label', value: a.label, placeholder: a.smart ? 'School' : 'e.g. Gym, Work' },
@@ -89,6 +93,9 @@ function edit(a, preset) {
     save(v) {
       const days = a.smart ? [] : [...f.querySelectorAll('[data-days] [aria-pressed="true"]')].map(b => +b.dataset.d);
       Object.assign(a, { time: v.time, label: v.label, snooze: v.snooze || 9, on: v.on, days });
+      if (a.smart) { const mc = K.morningCfg(), changed = mc.ready !== (v.ready || 45) || mc.early !== (v.early || 0) || mc.bus !== v.bus;
+        K.put('morning', Object.assign(mc, { ready: v.ready || 45, early: v.early || 0, bus: v.bus }));
+        if (changed) { K.put('mornings', {}); planAhead(true); } }
       if (!a.smart && !days.length) a.once = K.alarmNextOnce(a.time); else delete a.once;
       AL.upsert(a); if (!K.notifyOn()) K.askNotify(); render();
       const nx = K.nextAlarm(); if (nx && nx.a.id === a.id) K.toast(`Alarm in ${until(nx.at)}`);
@@ -119,6 +126,7 @@ async function startNight() {
   document.body.appendChild(el);
   try { await document.documentElement.requestFullscreen(); } catch {}
   tickNight(); night.timer = setInterval(tickNight, 1000);
+  planAhead(true); night.planner = setInterval(() => planAhead(true), 30 * 60000);   /* bus delays or cancellations move the alarm */
   document.addEventListener('visibilitychange', relock);
 }
 async function relock() { if (night && document.visibilityState === 'visible' && (!night.lock || night.lock.released)) { try { night.lock = await navigator.wakeLock.request('screen'); } catch {} } }
@@ -145,7 +153,7 @@ function ring(a) {
 }
 function stopRing() { if (!night) return; night.ringing = false; clearInterval(night.beeper); if (navigator.vibrate) navigator.vibrate(0); try { night.gain.disconnect(); } catch {} K.$('#night')?.classList.remove('ring'); }
 function stopNight(woke) {
-  if (!night) return; stopRing(); clearInterval(night.timer); try { night.lock && night.lock.release(); } catch {} try { night.ctx.close(); } catch {}
+  if (!night) return; stopRing(); clearInterval(night.timer); clearInterval(night.planner); try { night.lock && night.lock.release(); } catch {} try { night.ctx.close(); } catch {}
   document.removeEventListener('visibilitychange', relock); K.$('#night')?.remove(); try { document.exitFullscreen(); } catch {}
   const p = K.get('sleep.pending', null);
   if (woke && p) {
@@ -175,7 +183,15 @@ document.addEventListener('click', e => {
   else if (d.pickkind) { b.closest('.sheet-bg').remove(); d.pickkind === 'school' ? edit(null, { smart: true, label: 'School', time: '' }) : edit(); }
 });
 K.$('#fab').innerHTML = svg('plus');
+/* work out the next school mornings from the bus times (in the background) */
+async function planAhead(force) {
+  if (!AL.all().some(a => a.smart && a.on)) return;
+  const days = []; for (let i = 0; i < 3; i++) { const d = K.addDays(K.ymd(), i); if (K.lessonsOn(d).length) days.push(d); }
+  for (const d of days.slice(0, 2)) await K.planMorning(d, force && K.daysUntil(d) <= 1);
+  if (!night) render();
+}
 render();
+planAhead();
 setInterval(() => { if (!night && document.visibilityState === 'visible') render(); }, 30000);
 </script>
 </body>

@@ -82,6 +82,12 @@ a.card:active, button.card:active { transform: scale(.99); }
 .bar i { display: block; height: 100%; border-radius: 99px; background: var(--c, var(--accent)); width: 0; transition: width .4s; }
 .bar.over i { background: var(--bad); }
 
+.su { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); text-decoration: none; width: 100%; text-align: left; }
+.su:first-child { border-top: 0; }
+.su .ic { width: 26px; text-align: center; font-size: 17px; }
+.su .tx { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; }
+.su .tx small { display: block; color: var(--muted); font-weight: 500; font-size: 12px; }
+.su .ar { color: var(--muted-2); }
 .agrow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); text-decoration: none; }
 .agrow:first-of-type { border-top: 0; }
 .agrow .tm { width: 46px; flex: none; font-size: 12.5px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -155,6 +161,12 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
     <div class="banner" id="backupBanner" hidden>
       <span id="backupText"><b>No backup yet.</b> Save a copy of your data.</span>
       <a class="act" href="#settings">Back up</a>
+    </div>
+
+    <div class="card" data-block="setup" id="c-setup" style="--c:#6fdc8c" hidden>
+      <div class="k"><span class="dot"></span><span id="su-title">Set up Life Hub</span><button class="go" type="button" id="suHide" style="font-size:12px;letter-spacing:0;text-transform:none;font-weight:700;color:var(--muted)">Hide</button></div>
+      <div class="bar" style="margin:10px 0 4px"><i id="su-bar"></i></div>
+      <div id="su-list"></div>
     </div>
 
     <form class="ask" data-block="ask" action="assistant/" method="get" autocomplete="off">
@@ -285,6 +297,14 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
     <div class="sec">Today screen</div>
     <div class="panel" id="layPanel"></div>
     <p class="note">Switch cards on or off and move them up or down.</p>
+
+    <div class="sec">Morning brief</div>
+    <div class="panel">
+      <div class="row"><div class="t"><b>Morning brief</b><small>One notification with your day: lessons, your bus, tests, homework, to-dos, workout.</small></div><input type="checkbox" id="brOn" style="width:22px;height:22px;accent-color:var(--accent)" aria-label="Morning brief on"></div>
+      <div class="row"><div class="t"><b>At</b></div><input type="time" id="brTime" value="07:00" aria-label="Morning brief time"></div>
+      <div class="row"><div class="t"><b>On</b></div><select id="brDays" aria-label="Morning brief days"><option value="all">Every day</option><option value="weekdays">Weekdays</option><option value="school">School days only</option></select></div>
+      <div class="row"><div class="t"><b>See what it looks like</b><small id="br-sub">Comes even when Life Hub is closed if “Reminders when closed” is on.</small></div><button class="btn" id="brPrev" type="button">Preview</button></div>
+    </div>
 
     <div class="sec">Reminders</div>
     <div class="panel">
@@ -699,7 +719,7 @@ function drawSettings() {
   $('#wResetRow').hidden = !p;
   $('#theme').value = get('hub.theme', '');
   const last = get('hub.lastBackup', 0);
-  drawNotify(); drawSync(); drawPush();
+  drawNotify(); drawSync(); drawPush(); drawBrief();
   $('#bk-last').textContent = last ? `Last backup: ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(last)}` : 'Everything from every app in one file. No backup made yet.';
 }
 async function askPin(why) {
@@ -830,6 +850,56 @@ $('#wHere').onclick = () => {
 $('#wReset').onclick = () => { localStorage.removeItem('hub.place'); drawSettings(); loadWeather(); };
 $('#theme').onchange = e => { set('hub.theme', e.target.value); applyTheme(); };
 
+/* ---------- set-up checklist ---------- */
+function setupItems() {
+  const auth = get('wl_auth', null), st = window.K && K.sync ? K.sync.state() : {};
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  return [
+    ['📲', 'Install Life Hub', 'Chrome ⋮ → Install app, so it opens like an app', !!standalone, 'install'],
+    ['☁️', 'Log in for cloud sync', 'Workout → You: backs up everything', !!(auth && auth.rt), 'workout/'],
+    ['🔄', 'Cloud sync working', st.err ? st.err : 'Settings → Cloud sync', !!(auth && auth.rt && st.last && !st.err), '#settings'],
+    ['🔔', 'Allow notifications', 'For reminders, homework and alarms', 'Notification' in window && Notification.permission === 'granted', 'notify'],
+    ['🌙', 'Reminders when closed', 'Settings → Reminders when Life Hub is closed', !!(get('lh.push', null) || {}).on, '#settings'],
+    ['☀️', 'Morning brief', 'Your day in one notification', K.briefCfg().on, '#settings'],
+    ['🤖', 'AI key for the assistant', 'Workout → You → AI coach (free Gemini key)', !!localStorage.getItem('wl_aikey'), 'workout/'],
+    ['🏫', 'Add your timetable', 'School → + (lessons repeat every week)', K.school().lessons.length > 0, 'school/'],
+    ['⏰', 'School alarm', 'Alarms → + → School alarm (uses your bus)', K.alarms.all().some(a => a.smart), 'alarm/'],
+    ['🔒', 'PIN lock', 'Settings → Privacy lock (optional)', Hub.hasPin(), '#settings'],
+  ];
+}
+function drawSetup() {
+  if (!window.K || !K.briefCfg) return;
+  const it = setupItems(), done = it.filter(x => x[3]).length, el = $('#c-setup');
+  if (done === it.length) { el.dataset.all = '1'; el.hidden = true; return; }
+  delete el.dataset.all; if (!layout().hidden.includes('setup')) el.hidden = false;
+  $('#su-title').textContent = `Set up Life Hub · ${done} of ${it.length} done`;
+  $('#su-bar').style.width = done / it.length * 100 + '%';
+  $('#su-list').innerHTML = it.filter(x => !x[3]).slice(0, 4).map(([ic, t, sub, , go]) => go === 'install' || go === 'notify'
+    ? `<button class="su" type="button" data-su="${go}"><span class="ic">${ic}</span><span class="tx">${esc(t)}<small>${esc(sub)}</small></span><span class="ar">›</span></button>`
+    : `<a class="su" href="${go}"><span class="ic">${ic}</span><span class="tx">${esc(t)}<small>${esc(sub)}</small></span><span class="ar">›</span></a>`).join('');
+}
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-su]'); if (!b) return;
+  if (b.dataset.su === 'notify') { await K.askNotify(); drawSetup(); }
+  else toast('In Chrome: tap ⋮ (top right) → Install app / Add to Home screen');
+});
+$('#suHide').onclick = () => { const L = layout(); if (!L.hidden.includes('setup')) L.hidden.push('setup'); set('hub.layout', L); applyLayout(); drawLayout(); toast('Hidden. Turn it back on in Settings → Today screen.'); };
+
+/* ---------- morning brief ---------- */
+function drawBrief() { const c = K.briefCfg(); $('#brOn').checked = c.on; $('#brTime').value = c.time; $('#brDays').value = c.days; }
+function saveBrief() { const c = K.briefCfg(); Object.assign(c, { on: $('#brOn').checked, time: $('#brTime').value || '07:00', days: $('#brDays').value }); K.put('brief', c); drawSetup(); }
+$('#brOn').onchange = () => { saveBrief(); if ($('#brOn').checked) { if (!K.notifyOn()) K.askNotify(); toast(`Morning brief at ${K.briefCfg().time}`); } };
+$('#brTime').onchange = saveBrief; $('#brDays').onchange = saveBrief;
+$('#brPrev').onclick = async () => {
+  const d = K.hm(new Date()) < K.briefCfg().time ? K.ymd() : K.addDays(K.ymd(), 1);   /* the next brief you'll get */
+  $('#brPrev').textContent = '…'; await K.planMorning(d); $('#brPrev').textContent = 'Preview';
+  const b = K.briefFor(d);
+  if (K.notifyOn()) K.showNotification(b.title, b.body, location.href, 'brief-preview');
+  const box = document.createElement('div'); box.className = 'card'; box.style.cssText = 'position:fixed;left:16px;right:16px;bottom:calc(20px + var(--hubnav-h));z-index:60;white-space:pre-line;box-shadow:0 10px 30px rgba(0,0,0,.4)';
+  box.innerHTML = `<b>${esc(b.title)}</b><div class="sub" style="margin-top:6px;white-space:pre-line">${esc(b.body)}</div><button class="btn" type="button" style="margin-top:10px">Close</button>`;
+  box.querySelector('button').onclick = () => box.remove(); document.body.appendChild(box);
+};
+
 /* ---------- bottom bar: which three apps ---------- */
 function drawPins() {
   const p = Hub.pins(), opts = Hub.apps.filter(a => a.id !== 'home');
@@ -844,12 +914,12 @@ document.addEventListener('change', e => {
 });
 
 /* ---------- Today layout (which cards, in which order) ---------- */
-const BLOCKS = [['ask', '✦ Ask Life Hub'], ['weather', '🌦️ Weather'], ['trip', '🚌 Next trip'], ['workout', '🏋️ Workout today'], ['plan', '📋 Today’s plan'],
+const BLOCKS = [['setup', '✅ Set-up checklist'], ['ask', '✦ Ask Life Hub'], ['weather', '🌦️ Weather'], ['trip', '🚌 Next trip'], ['workout', '🏋️ Workout today'], ['plan', '📋 Today’s plan'],
   ['life', '✅ To-do · Habits · Countdown'], ['fun', '⏰ Alarm · Music · Anime'], ['daily', '😴 Sleep · Money · Shopping'], ['body', '💧 Water · Protein · Caffeine']];
 function layout() { const l = get('hub.layout', null) || {}; const order = (l.order || []).filter(k => BLOCKS.some(b => b[0] === k)); BLOCKS.forEach(b => { if (!order.includes(b[0])) order.push(b[0]); }); return { order, hidden: l.hidden || [] }; }
 function applyLayout() {
-  const L = layout(), main = $('#v-today'), note = main.querySelector('[data-block-note]');
-  for (const k of L.order) { const el = main.querySelector(`[data-block="${k}"]`); if (!el) continue; main.appendChild(el); el.hidden = L.hidden.includes(k); if (k === 'body' && note) { main.appendChild(note); note.hidden = el.hidden; } }
+  const L = layout(), su = $('#c-setup'); main = $('#v-today'), note = main.querySelector('[data-block-note]');
+  for (const k of L.order) { const el = main.querySelector(`[data-block="${k}"]`); if (!el) continue; main.appendChild(el); el.hidden = L.hidden.includes(k) || (k === 'setup' && (el.dataset.all === '1' || !$('#su-list').innerHTML)); if (k === 'body' && note) { main.appendChild(note); note.hidden = el.hidden; } }
 }
 function drawLayout() {
   const L = layout();
@@ -868,7 +938,9 @@ document.addEventListener('change', e => {
 });
 
 /* ---------- start ---------- */
-function refreshAll() { greet(); drawWorkout(); drawPlan(); drawBackupBanner(); loadTrip(); loadWeather(); }
+function refreshAll() { greet(); drawWorkout(); drawPlan(); drawBackupBanner(); loadTrip(); loadWeather(); drawSetup(); planMornings(); }
+/* the bus-based school morning, so the alarm tile and brief are right */
+async function planMornings() { if (!K.alarms.all().some(a => a.smart && a.on) && !K.briefCfg().on) return; const d = K.nextSchoolDay(); if (d && await K.planMorning(d)) drawPlan(); }
 drawApps(); applyLayout(); route(); refreshAll(); drawSettings(); drawLayout(); drawPins();
 setInterval(() => { if (document.visibilityState === 'visible') { loadTrip(); drawWorkout(); drawPlan(); } }, 60000);
 setInterval(() => { if (document.visibilityState === 'visible') loadWeather(); }, 15 * 60000);
