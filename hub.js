@@ -109,6 +109,7 @@
     ['notes', 'Notes', 'notes/', '#c9b37e', '<path d="M6 3.5h9l4 4V20a.5.5 0 0 1-.5.5h-12A.5.5 0 0 1 6 20z"/><path d="M14.5 3.5V8h4.5M9 12h6M9 16h6"/>'],
     ['countdown', 'Countdowns', 'countdowns/', '#ffcf5c', '<circle cx="12" cy="13" r="7.5"/><path d="M12 9v4l2.5 2M9.5 2.5h5"/>'],
     ['music', 'Music', 'music/', '#1ed760', '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>'],
+    ['ow', 'Overwatch', 'overwatch/', '#f99e1a', '<path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z"/><path d="M8 8.5l2 6.5M16 8.5l-2 6.5M12 7v6"/>'],
     ['anime', 'Anime', 'anime/', '#ff7eb6', '<rect x="3" y="5" width="18" height="13" rx="3"/><path d="M8 21h8M10.5 9.5v5l4-2.5z"/>'],
     ['coach', 'Money Coach', 'adviser/', '#3ecf9a', '<path d="M4 19V9M9.5 19V5M15 19v-7M20.5 19V8"/><path d="M3 21h19"/>'],
     ['clothes', 'Clothes', 'clothes/', '#b48cff', '<path d="M8 3l4 2.5L16 3l5 3.5-2.5 4L16 9v12H8V9l-2.5 1.5L3 6.5z"/>'],
@@ -304,4 +305,14 @@
   setTimeout(check, 5000);
   setInterval(check, 2 * 60000);
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') setTimeout(check, 2000); });
+})();
+
+/* Overwatch: log your stats quietly every 6 hours from any page (only if you linked a BattleTag) */
+(function () {
+  try { var c = JSON.parse(localStorage.getItem('hub.ow') || 'null'); if (!c || !c.tag) return; } catch (e) { return; }
+  setTimeout(function () {
+    var go = function () { window.OW && window.OW.auto(); };
+    if (window.OW) return go();
+    var sc = document.createElement('script'); sc.src = (window.Hub ? Hub.root : '/') + 'lib/ow.js'; sc.onload = go; document.head.appendChild(sc);
+  }, 7000);
 })();

@@ -1,11 +1,11 @@
 /* Life Hub offline cache for every module (travel/, workout/, ...).
    Network first so a new version shows up right away; the saved copy is used when offline or on a weak signal.
    Live data (bus times, weather, AI, cloud sync) is never cached here: other sites go straight to the network. */
-var CACHE = 'life-hub-v22';
+var CACHE = 'life-hub-v23';
 var SHELL = ['./', 'index.html', 'hub.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png',
-  'lib/kit.css', 'lib/kit.js', 'lib/agenda.js', 'lib/files.js', 'lib/bankimport.js', 'lib/ai.js', 'lib/sync.js', 'lib/ics.js',
+  'lib/kit.css', 'lib/kit.js', 'lib/agenda.js', 'lib/files.js', 'lib/bankimport.js', 'lib/ai.js', 'lib/sync.js', 'lib/ics.js', 'lib/ow.js',
   'travel/', 'travel/map.js', 'travel/icons/icon.svg', 'workout/', 'workout/icon-192.png',
-  'todo/', 'school/', 'calendar/', 'habits/', 'countdowns/', 'sleep/', 'shopping/', 'notes/', 'money/', 'adviser/', 'alarm/', 'music/', 'anime/', 'clothes/', 'shaving/', 'assistant/'];
+  'todo/', 'school/', 'calendar/', 'habits/', 'countdowns/', 'sleep/', 'shopping/', 'notes/', 'money/', 'adviser/', 'alarm/', 'music/', 'anime/', 'overwatch/', 'clothes/', 'shaving/', 'assistant/'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) {
     return Promise.all(SHELL.map(function (u) { return c.add(new Request(u, { cache: 'reload' })).catch(function () {}); }));

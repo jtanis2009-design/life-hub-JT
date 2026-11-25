@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Overwatch · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .prof { display: flex; gap: 14px; align-items: center; padding: 14px; border-radius: 18px; background: var(--surface) center / cover; border: 1px solid var(--line); position: relative; overflow: hidden; margin-bottom: 12px; }
+  .prof::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--bg) 92%, transparent), color-mix(in srgb, var(--bg) 55%, transparent)); }
+  .prof > * { position: relative; }
+  .prof img { width: 64px; height: 64px; border-radius: 14px; flex: none; }
+  .prof b { font-size: 20px; display: block; }
+  .ranks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .rank { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 10px; text-align: center; }
+  .rank img { width: 46px; height: 46px; object-fit: contain; display: block; margin: 2px auto; }
+  .rank .k { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .rank .v { font-weight: 800; font-size: 14px; }
+  .hero { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); width: 100%; text-align: left; }
+  .hero:first-child { border-top: 0; }
+  .hero img, .hero .ph { width: 44px; height: 44px; border-radius: 12px; background: var(--surface-2); flex: none; object-fit: cover; }
+  .hero .body { flex: 1; min-width: 0; }
+  .hero .body b { display: block; }
+  .hero .m { font-size: 12.5px; color: var(--muted); }
+  .hero .progress { height: 5px; margin-top: 5px; }
+  .cnt { min-width: 40px; height: 32px; border-radius: 10px; display: grid; place-items: center; font-weight: 800; background: var(--surface-2); color: var(--muted); padding: 0 8px; }
+  .cnt.on { background: color-mix(in srgb, var(--c) 22%, transparent); color: var(--ct); }
+  .role { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .var { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .var:first-child { border-top: 0; }
+  .var .own { width: 30px; height: 30px; border-radius: 9px; border: 2px solid var(--line); flex: none; font-weight: 800; }
+  .var .own[aria-pressed="true"] { background: var(--c); border-color: var(--c); color: #0d0f14; }
+  .day { display: flex; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); align-items: center; }
+  .day:first-child { border-top: 0; }
+  .day .d { width: 54px; flex: none; font-weight: 800; }
+  .day .d small { display: block; font-weight: 600; color: var(--muted); font-size: 11.5px; }
+  .wl { font-weight: 800; }
+  .wl .w { color: var(--good); } .wl .l { color: var(--bad); }
+  #search { width: 100%; margin-bottom: 10px; }
+</style>
+</head>
+<body style="--c:#f99e1a">
+<div class="wrap" id="app"></div>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script src="../lib/ow.js"></script>
+<script>
+const { esc } = K;
+const WV = K.coll('owweapons');
+const TABS = [['profile', 'Profile'], ['log', 'Game log'], ['heroes', 'Heroes'], ['weapons', 'Weapon variants']];
+let tab = K.get('ow.tab', 'profile'), mode = K.get('ow.mode', 'competitive'), role = 'all', q = '', data = null, heroes = [], err = '', loading = false;
+try { data = JSON.parse(localStorage.getItem('hub.ow.cache') || 'null'); } catch {}
+const cfg = () => K.get('ow', {}) || {};
+const hrs = s => { const h = s / 3600; return h >= 10 ? Math.round(h) + 'h' : h >= 1 ? h.toFixed(1) + 'h' : Math.round(s / 60) + 'm'; };
+const heroBy = k => heroes.find(h => h.key === k) || { key: k, name: OW.cap(k.replace(/-/g, ' ')), role: '' };
+const ROLE = { tank: '🛡️ Tank', damage: '⚔️ Damage', support: '➕ Support' };
+
+function render() {
+  let html = K.header('Overwatch', 'ow', cfg().tag ? `<button class="iconbtn" type="button" data-act="setup" aria-label="Overwatch settings">${K.svg('gear')}</button>` : '');
+  html += `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}${k === 'weapons' && WV.all().filter(v => v.owned).length ? `<span class="n">${WV.all().filter(v => v.owned).length}</span>` : ''}</button>`).join('')}</div>`;
+  if (tab === 'weapons') html += weaponsHtml();
+  else if (!cfg().tag) html += setupHtml();
+  else {
+    if (err) html += `<div class="card" style="border-color:var(--bad)"><b style="color:var(--bad)">Couldn’t load your stats</b><p class="small muted" style="margin:4px 0 0">${err}</p></div>`;
+    if (!data && loading) html += `<div class="empty"><b>Loading your career profile…</b>This can take a few seconds the first time.</div>`;
+    else if (data && data.private) html += privateHtml();
+    else if (data) html += tab === 'profile' ? profileHtml() : tab === 'log' ? logHtml() : heroesHtml();
+  }
+  K.$('#app').innerHTML = html;
+}
+function setupHtml() {
+  return `<div class="card"><div class="k">Link your Overwatch account</div>
+    <p class="small muted" style="margin:6px 0 10px">Blizzard has no official Overwatch API, so Life Hub reads your <b>public career profile</b> (through the free OverFast service) using your BattleTag. No password needed.</p>
+    <ol class="steps small"><li>In Overwatch: <b>Options → Social → Career Profile Visibility → Public</b>.</li><li>Type your BattleTag below, e.g. <b>Name#12345</b> (capitals matter).</li></ol>
+    <button class="btn primary" type="button" data-act="setup" style="margin-top:8px">Link BattleTag</button></div>
+    <p class="hint">Weapon variants work without linking: open that tab.</p>`;
+}
+function privateHtml() {
+  return `<div class="card"><b>Your career profile is private</b><p class="small muted" style="margin:6px 0 10px">Overwatch hides your stats from everyone, Life Hub included. In Overwatch: <b>Options → Social → Career Profile Visibility → Public</b>. Blizzard updates it after you’ve played a game, then come back here.</p>
+    <button class="btn" type="button" data-act="refresh">Check again</button></div>`;
+}
+function stats() { return mode === 'competitive' ? data.comp : data.qp; }
+function modeTabs() { return `<div class="seg" style="margin-bottom:12px">${[['competitive', 'Competitive'], ['quickplay', 'Quick Play']].map(([k, l]) => `<button type="button" data-mode="${k}" aria-pressed="${mode === k}">${l}</button>`).join('')}</div>`; }
+function profileHtml() {
+  const s = data.summary || {}, comp = (s.competitive || {}), plat = comp.pc ? 'pc' : comp.console ? 'console' : null, c = plat ? comp[plat] : null;
+  let h = `<div class="prof" style="${s.namecard ? `background-image:url('${esc(s.namecard)}')` : ''}">${s.avatar ? `<img onerror="this.style.visibility='hidden'" src="${esc(s.avatar)}" alt="">` : ''}<div><b>${esc(s.username || cfg().tag)}</b><span class="small muted">${esc(s.title || '')}${s.endorsement ? ` · Endorsement ${s.endorsement.level}` : ''}</span></div></div>`;
+  if (c) h += `<div class="sec">Competitive rank${c.season ? ` · season ${c.season}` : ''}${comp.pc && comp.console ? ` · ${plat.toUpperCase()}` : ''}</div><div class="ranks">${['tank', 'damage', 'support'].map(r => `<div class="rank"><div class="k">${r}</div>${c[r] ? `<img onerror="this.style.visibility='hidden'" src="${esc(c[r].rank_icon)}" alt=""><div class="v">${OW.rankText(c[r])}</div>` : `<div class="v muted" style="margin:16px 0">Unranked</div>`}</div>`).join('')}</div>`;
+  h += modeTabs();
+  const st = stats(), g = st && st.general;
+  if (!g) return h + `<p class="hint">No ${mode === 'competitive' ? 'competitive' : 'quick play'} games on your profile.</p>`;
+  h += `<div class="grid2"><div class="stat"><div class="k">Games</div><div class="v num">${g.games_played}</div><div class="s"><span class="wl"><span class="w">${g.games_won}W</span> · <span class="l">${g.games_lost}L</span></span></div></div>
+    <div class="stat"><div class="k">Win rate</div><div class="v num">${Math.round(g.winrate)}<small>%</small></div><div class="s">KDA ${g.kda}</div></div></div>
+    <div class="grid2"><div class="stat"><div class="k">Time played</div><div class="v num">${hrs(g.time_played)}</div></div>
+    <div class="stat"><div class="k">Per 10 min</div><div class="v num" style="font-size:16px">${g.average.eliminations} elims</div><div class="s">${g.average.deaths} deaths · ${Math.round(g.average.damage)} dmg</div></div></div>`;
+  const R = st.roles || {};
+  h += `<div class="sec">Roles</div><div class="list">${['tank', 'damage', 'support'].filter(r => R[r]).map(r => { const x = R[r]; return `<div class="item"><span class="body"><span class="title">${ROLE[r]}</span><span class="meta"><span>${hrs(x.time_played)}</span><span>${K.plural(x.games_played, 'game')}</span><span>${Math.round(x.winrate)}% wins</span><span>KDA ${x.kda}</span></span></span></div>`; }).join('')}</div>`;
+  const top = Object.entries(st.heroes || {}).sort((a, b) => b[1].time_played - a[1].time_played).slice(0, 3);
+  if (top.length) h += `<div class="sec">Most played<button class="act" type="button" data-tab="heroes">All heroes</button></div><div class="list">${top.map(heroRow).join('')}</div>`;
+  h += `<p class="hint" style="margin-top:12px">Updated ${K.ago ? K.ago(data.at) : new Date(data.at).toLocaleString()}. Blizzard refreshes your profile a while after each game. <button class="act" type="button" data-act="refresh" style="color:var(--ct);font-weight:700">Refresh</button></p>`;
+  return h;
+}
+function heroRow([k, x], i, arr) {
+  const hb = heroBy(k), max = arr && arr[0] ? arr[0][1].time_played : x.time_played;
+  return `<div class="hero">${hb.portrait ? `<img onerror="this.style.visibility='hidden'" src="${esc(hb.portrait)}" alt="" loading="lazy">` : '<span class="ph"></span>'}<span class="body"><b>${esc(hb.name)}</b><span class="m">${hrs(x.time_played)} · ${K.plural(x.games_played, 'game')} · ${Math.round(x.winrate)}% wins · KDA ${x.kda}</span><span class="progress"><i style="width:${Math.max(3, x.time_played / max * 100)}%"></i></span></span></div>`;
+}
+function heroesHtml() {
+  const st = stats(); let list = Object.entries((st && st.heroes) || {}).filter(([k]) => role === 'all' || heroBy(k).role === role).sort((a, b) => b[1].time_played - a[1].time_played);
+  return modeTabs() + roleTabs() + (list.length ? `<div class="list">${list.map(heroRow).join('')}</div>` : `<div class="empty"><b>No heroes here yet</b>Play some ${mode === 'competitive' ? 'competitive' : 'quick play'} games.</div>`);
+}
+function roleTabs() { return `<div class="tabs">${[['all', 'All'], ['tank', 'Tank'], ['damage', 'Damage'], ['support', 'Support']].map(([k, l]) => `<button type="button" data-role="${k}" aria-pressed="${role === k}">${l}</button>`).join('')}</div>`; }
+/* game log: what changed between the daily snapshots */
+function logHtml() {
+  const snaps = K.get('owsnaps', []) || [], key = mode === 'competitive' ? 'comp' : 'qp';
+  let h = modeTabs();
+  if (snaps.length < 2) return h + `<div class="empty"><b>Your log starts today</b>Life Hub saves your stats every day you open it (any page, every 6 hours) and shows here what changed: games, wins, losses, hours and rank ups and downs.</div>`;
+  const rows = [];
+  for (let i = snaps.length - 1; i > 0 && rows.length < 60; i--) {
+    const a = snaps[i - 1], b = snaps[i], x = a[key], y = b[key]; if (!x || !y) continue;
+    const gp = y.gp - x.gp, gw = y.gw - x.gw, gl = y.gl - x.gl, tp = y.tp - x.tp;
+    const rk = Object.keys(b.ranks || {}).filter(r => r !== 'season' && (a.ranks || {})[r] !== b.ranks[r]).map(r => `${OW.cap(r)}: ${(a.ranks || {})[r] || 'unranked'} → <b>${b.ranks[r]}</b>`);
+    if (!gp && !rk.length) continue;
+    const d = K.fromYmd(b.d);
+    rows.push(`<div class="day"><div class="d">${d.getDate()} ${K.MONTHS[d.getMonth()].slice(0, 3)}<small>${K.DAYS_SHORT[d.getDay()]}</small></div><div class="body" style="flex:1"><div class="wl">${gp} game${gp === 1 ? '' : 's'} · <span class="w">${gw}W</span> <span class="l">${gl}L</span>${gp - gw - gl > 0 ? ` · ${gp - gw - gl}D` : ''}</div><div class="small muted">${hrs(tp)} played${gp ? ` · ${Math.round(gw / gp * 100)}% wins` : ''}</div>${rk.length ? `<div class="small" style="margin-top:3px">📈 ${rk.join(' · ')}</div>` : ''}</div></div>`);
+  }
+  const wk = snaps.filter(s => s.d >= K.addDays(K.ymd(), -7)), first = wk[0] && wk[0][key], last = snaps[snaps.length - 1][key];
+  if (first && last) { const gp = last.gp - first.gp, gw = last.gw - first.gw; h += `<div class="grid2"><div class="stat"><div class="k">Last 7 days</div><div class="v num">${gp}<small> games</small></div><div class="s">${gp ? Math.round(gw / gp * 100) + '% wins' : 'no games'}</div></div><div class="stat"><div class="k">Time</div><div class="v num">${hrs(last.tp - first.tp)}</div><div class="s">${mode === 'competitive' ? 'competitive' : 'quick play'}</div></div></div>`; }
+  return h + (rows.length ? `<div class="list">${rows.join('')}</div>` : `<div class="empty"><b>No games logged yet</b>Play a few, then check back.</div>`) + `<p class="hint" style="margin-top:10px">Days are grouped by when Life Hub saw the change, so games late at night can show up the next day.</p>`;
+}
+/* ---------- weapon variants: your own tracker (no API has these) ---------- */
+function weaponsHtml() {
+  const all = WV.all(), owned = all.filter(v => v.owned), want = all.filter(v => !v.owned);
+  const per = k => all.filter(v => v.hero === k);
+  let list = heroes.slice().filter(hb => (role === 'all' || hb.role === role) && (!q || hb.name.toLowerCase().includes(q)));
+  list.sort((a, b) => per(b.key).filter(v => v.owned).length - per(a.key).filter(v => v.owned).length || a.name.localeCompare(b.name));
+  const withAny = heroes.filter(hb => per(hb.key).some(v => v.owned)).length;
+  let h = `<div class="grid2"><div class="stat"><div class="k">Variants owned</div><div class="v num">${owned.length}</div><div class="s">${want.length ? want.length + ' on your wishlist' : 'tap a hero to add one'}</div></div>
+    <div class="stat"><div class="k">Heroes covered</div><div class="v num">${withAny}<small> / ${heroes.length || '–'}</small></div><div class="progress" style="margin-top:6px"><i style="width:${heroes.length ? withAny / heroes.length * 100 : 0}%"></i></div></div></div>`;
+  if (owned.length) { const by = ['tank', 'damage', 'support'].map(r => `${ROLE[r]} <b>${owned.filter(v => heroBy(v.hero).role === r).length}</b>`).join(' · '); h += `<p class="small muted" style="margin:-4px 2px 12px">${by}</p>`; }
+  h += roleTabs() + `<input id="search" type="search" placeholder="Search heroes" value="${esc(q)}" aria-label="Search heroes">`;
+  if (!heroes.length) return h + `<div class="empty"><b>Loading heroes…</b>Needs internet the first time.</div>`;
+  h += `<div class="list">${list.map(hb => { const v = per(hb.key), o = v.filter(x => x.owned).length, w = v.length - o;
+    return `<button class="hero" type="button" data-hero="${hb.key}"><img onerror="this.style.visibility='hidden'" src="${esc(hb.portrait)}" alt="" loading="lazy"><span class="body"><b>${esc(hb.name)}</b><span class="m">${v.length ? v.filter(x => x.owned).map(x => esc(x.name)).slice(0, 3).join(', ') + (o > 3 ? '…' : '') + (w ? `${o ? ' · ' : ''}${w} wanted` : '') : `<span class="role">${hb.role}</span>`}</span></span><span class="cnt ${o ? 'on' : ''}">${o}</span></button>`; }).join('')}</div>`;
+  return h;
+}
+function heroSheet(key) {
+  const hb = heroBy(key);
+  const f = K.form({ title: hb.name + ' · weapon variants', saveLabel: 'Add',
+    fields: [{ type: 'html', k: 'list', html: `<div id="vlist"></div>` },
+      { k: 'name', label: 'Add a variant (its name in the game)', placeholder: 'e.g. the variant’s name' },
+      { k: 'owned', label: 'I have it (untick = wishlist)', type: 'checkbox', value: true },
+      { k: 'note', label: 'Note (optional)', placeholder: 'e.g. from the battle pass, season 18' }],
+    save(v) { if (!v.name) { K.toast('Type the variant’s name first.'); return false; }
+      WV.upsert({ id: K.uid(), hero: key, name: v.name.slice(0, 60), owned: !!v.owned, note: v.note, got: v.owned ? K.ymd() : '' });
+      K.toast(v.owned ? `Added. ${hb.name} has ${WV.all().filter(x => x.hero === key && x.owned).length} now 🎉` : 'Added to your wishlist'); render(); setTimeout(() => heroSheet(key), 250); } });
+  const draw = () => { const v = WV.all().filter(x => x.hero === key).sort((a, b) => (b.owned - a.owned) || a.name.localeCompare(b.name));
+    f.querySelector('#vlist').innerHTML = v.length ? `<div style="margin-bottom:12px">${v.map(x => `<div class="var"><button class="own" type="button" data-own="${x.id}" aria-pressed="${!!x.owned}" aria-label="${x.owned ? 'Owned' : 'Wanted'}">${x.owned ? '✓' : ''}</button><span style="flex:1;min-width:0"><b>${esc(x.name)}</b><span class="small muted" style="display:block">${x.owned ? 'Owned' + (x.got ? ' since ' + K.fmtDay(x.got) : '') : 'Wishlist'}${x.note ? ' · ' + esc(x.note) : ''}</span></span><button class="btn sm" type="button" data-delv="${x.id}" aria-label="Delete ${esc(x.name)}">✕</button></div>`).join('')}</div>`
+      : `<p class="small muted">No variants for ${esc(hb.name)} yet. Add the ones you have (or want) below.</p>`; };
+  draw();
+  f.addEventListener('click', e => { const o = e.target.closest('[data-own]'), d = e.target.closest('[data-delv]');
+    if (o) { const x = WV.byId(o.dataset.own); x.owned = !x.owned; if (x.owned && !x.got) x.got = K.ymd(); WV.upsert(x); draw(); render(); }
+    if (d) { const x = WV.byId(d.dataset.delv); if (confirm(`Delete “${x.name}”?`)) { WV.remove(x.id); draw(); render(); } } });
+}
+function setup() {
+  K.form({ title: 'Your Overwatch account', saveLabel: 'Link',
+    fields: [{ k: 'tag', label: 'BattleTag', value: cfg().tag || '', placeholder: 'Name#12345', required: true, attrs: 'autocomplete="off" spellcheck="false" autocapitalize="off"', hint: 'Exactly as in Battle.net, capitals included. Your career profile must be Public.' }],
+    save(v) { const t = v.tag.trim(); if (!/^[^#\s]{2,}#\d{3,}$/.test(t)) { K.toast('Use the full BattleTag with the number, e.g. Name#12345'); return false; }
+      const changed = t !== cfg().tag; K.put('ow', Object.assign(cfg(), { tag: t })); if (changed) { data = null; localStorage.removeItem('hub.ow.cache'); } tab = 'profile'; load(true); },
+    del: cfg().tag ? () => { if (!confirm('Unlink your BattleTag? Your game log and weapon variants stay.')) return false; K.put('ow', {}); data = null; localStorage.removeItem('hub.ow.cache'); render(); } : null });
+}
+async function load(force) {
+  if (!cfg().tag || loading) return;
+  if (!force && data && Date.now() - data.at < 30 * 60000) return;
+  loading = true; err = ''; render();
+  try { data = await OW.fetchAll(cfg().tag); }
+  catch (e) { err = e.code === 404 ? `Overwatch can’t find <b>${esc(cfg().tag)}</b>. Check the BattleTag (capitals and number) and that your career profile is <b>Public</b>. New or just-changed profiles can take a few hours to show up.` : !navigator.onLine ? 'You’re offline.' : esc(e.message); }
+  loading = false; render();
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
+  if (d.tab) { tab = d.tab; K.put('ow.tab', tab); role = 'all'; q = ''; render(); window.scrollTo(0, 0); }
+  else if (d.mode) { mode = d.mode; K.put('ow.mode', mode); render(); }
+  else if (d.role) { role = d.role; render(); }
+  else if (d.hero) heroSheet(d.hero);
+  else if (d.act === 'setup') setup();
+  else if (d.act === 'refresh') load(true);
+});
+document.addEventListener('input', e => { if (e.target.id === 'search') { q = e.target.value.trim().toLowerCase(); const pos = e.target.selectionStart; render(); const s = K.$('#search'); s.focus(); s.setSelectionRange(pos, pos); } });
+render();
+OW.heroes().then(h => { heroes = h; render(); });
+load();
+</script>
+</body>
+</html>
