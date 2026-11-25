@@ -106,6 +106,11 @@ a.card:active, button.card:active { transform: scale(.99); }
 .lay.off b { color: var(--muted-2); text-decoration: line-through; }
 .lay button { width: 34px; height: 34px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); font-weight: 800; }
 .lay button:disabled { opacity: .3; }
+.jump { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px 6px; padding: 0 16px 4px; }
+.jump::-webkit-scrollbar { display: none; }
+.jump a { flex: none; padding: 8px 12px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; font-weight: 700; color: var(--muted); text-decoration: none; }
+.flash { animation: flash 1.6s ease-out; border-radius: 12px; }
+@keyframes flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 30%, transparent); } 100% { background: transparent; } }
 .banner { display: flex; gap: 10px; align-items: center; background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line)); border-radius: 14px; padding: 11px 13px; font-size: 13.5px; margin-bottom: 12px; }
 .banner b { font-weight: 700; }
 .banner .act { margin-left: auto; font-weight: 700; color: var(--accent); white-space: nowrap; }
@@ -261,7 +266,10 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
 
   <!-- SETTINGS -->
   <main id="v-settings" hidden>
-    <div class="sec" style="margin-top:4px" id="account">Account</div>
+    <div class="jump" aria-label="Go to">
+      <a href="#settings:account">👤 Account</a><a href="#settings:ai">🤖 AI key</a><a href="#settings:brief">☀️ Morning brief</a><a href="#settings:remind">🔔 Reminders</a><a href="#settings:sync">☁️ Sync</a><a href="#settings:bar">📱 Bottom bar</a><a href="#settings:backup">💾 Backup</a>
+    </div>
+    <div class="sec" style="margin-top:4px" id="s-account">Account</div>
     <div class="panel" id="acct-in" hidden>
       <div class="row"><div class="t"><b id="acct-email">Logged in</b><small id="acct-sub">Everything syncs to all your devices.</small></div><button class="btn" id="acctOut" type="button">Log out</button></div>
     </div>
@@ -302,7 +310,7 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
     </div>
     <p class="note">The PIN keeps other people out of the app on your phone. It does not encrypt your data.</p>
 
-    <div class="sec">Bottom bar</div>
+    <div class="sec" id="s-bar">Bottom bar</div>
     <div class="panel" id="pinPanel"></div>
     <p class="note">The bar at the bottom of every page: Today, these three apps, and Apps for everything else.</p>
 
@@ -310,7 +318,20 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
     <div class="panel" id="layPanel"></div>
     <p class="note">Switch cards on or off and move them up or down.</p>
 
-    <div class="sec">Morning brief</div>
+    <div class="sec" id="s-ai">AI assistant</div>
+    <div class="panel" style="padding:14px 16px">
+      <p style="margin:0 0 10px;color:var(--muted);font-size:13.5px" id="ai-state">The Assistant and the Workout coach use a free Google Gemini key.</p>
+      <ol id="ai-steps" style="margin:0 0 10px;padding-left:20px;color:var(--muted);font-size:13.5px;line-height:1.6">
+        <li>Open <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700">aistudio.google.com/app/apikey</a> and log in with a Google account.</li>
+        <li>Tap <b>Create API key</b> and copy it (it starts with <b>AIza</b>).</li>
+        <li>Paste it here and tap <b>Save</b>.</li></ol>
+      <div style="display:flex;gap:8px"><input id="aiKey" type="password" autocomplete="off" placeholder="Paste your key (AIza…)" aria-label="Gemini API key" style="flex:1;min-width:0"><button class="btn primary" id="aiSave" type="button">Save</button></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="btn" id="aiTest" type="button">Test</button><button class="btn danger" id="aiDel" type="button" hidden>Remove key</button></div>
+      <p class="small" id="ai-msg" style="margin:8px 0 0"></p>
+    </div>
+    <p class="note">The key is free for personal use. It’s saved on your devices and in your own cloud, and only sent to Google’s Gemini.</p>
+
+    <div class="sec" id="s-brief">Morning brief</div>
     <div class="panel">
       <div class="row"><div class="t"><b>Morning brief</b><small>One notification with your day: lessons, your bus, tests, homework, to-dos, workout.</small></div><input type="checkbox" id="brOn" style="width:22px;height:22px;accent-color:var(--accent)" aria-label="Morning brief on"></div>
       <div class="row"><div class="t"><b>At</b></div><input type="time" id="brTime" value="07:00" aria-label="Morning brief time"></div>
@@ -318,7 +339,7 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       <div class="row"><div class="t"><b>See what it looks like</b><small id="br-sub">Comes even when Life Hub is closed if “Reminders when closed” is on.</small></div><button class="btn" id="brPrev" type="button">Preview</button></div>
     </div>
 
-    <div class="sec">Reminders</div>
+    <div class="sec" id="s-remind">Reminders</div>
     <div class="panel">
       <div class="row">
         <div class="t"><b id="nt-state">Notifications are off</b><small id="nt-sub">For to-dos, homework, tests, events, habits and countdowns.</small></div>
@@ -337,7 +358,7 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
     </div>
     <p class="note">While Life Hub is open (or in the background) reminders come right on time. When it’s closed, the job sends them. Alarms don’t use this: use night mode or the Clock app for those.</p>
 
-    <div class="sec">Cloud sync</div>
+    <div class="sec" id="s-sync">Cloud sync</div>
     <div class="panel">
       <div class="row">
         <div class="t"><b id="cs-state">Cloud sync is off</b><small id="cs-sub">Log in in Workout → You to back up everything and use Life Hub on more devices.</small></div>
@@ -355,7 +376,7 @@ service cloud.firestore {
 }</pre></div>
     <p class="note">Syncs everything in Life Hub per item, so changes on two devices both survive. Your workouts sync through the Workout app. Receipt files and clothing photos stay on this device: they’re in the backup file.</p>
 
-    <div class="sec">Backup</div>
+    <div class="sec" id="s-backup">Backup</div>
     <div class="panel">
       <div class="row">
         <div class="t"><b>Download backup file</b><small id="bk-last">Everything from every app in one file.</small></div>
@@ -419,14 +440,16 @@ applyTheme();
 
 /* ---------- views ---------- */
 function route() {
-  const v = (location.hash.slice(1) || 'today');
+  const [v, part] = (location.hash.slice(1) || 'today').split(':');
   const view = ['today', 'apps', 'settings'].includes(v) ? v : 'today';
   for (const id of ['today', 'apps', 'settings']) $('#v-' + id).hidden = id !== view;
   document.querySelectorAll('nav.bottom a[data-v]').forEach(a => { if (a.dataset.v === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   const titles = { apps: 'All apps', settings: 'Settings' };
   if (view === 'today') greet(); else { $('#greet').textContent = titles[view]; $('#today-date').textContent = ''; }
   if (view === 'settings') drawSettings();
-  window.scrollTo(0, 0);
+  const target = part && document.getElementById('s-' + part);
+  if (target) setTimeout(() => { target.scrollIntoView({ block: 'start', behavior: 'smooth' }); target.classList.remove('flash'); void target.offsetWidth; target.classList.add('flash'); }, 60);
+  else window.scrollTo(0, 0);
 }
 addEventListener('hashchange', route);
 
@@ -731,7 +754,7 @@ function drawSettings() {
   $('#wResetRow').hidden = !p;
   $('#theme').value = get('hub.theme', '');
   const last = get('hub.lastBackup', 0);
-  drawNotify(); drawSync(); drawPush(); drawBrief(); drawAccount();
+  drawNotify(); drawSync(); drawPush(); drawBrief(); drawAccount(); drawAI();
   $('#bk-last').textContent = last ? `Last backup: ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(last)}` : 'Everything from every app in one file. No backup made yet.';
 }
 async function askPin(why) {
@@ -900,21 +923,42 @@ $('#acctOut').onclick = () => {
   drawAccount(); drawSync(); drawSetup(); toast('Logged out on this device');
 };
 
+/* ---------- AI key (shared with the Workout coach, synced to your devices) ---------- */
+function drawAI() {
+  const k = localStorage.getItem('wl_aikey') || '';
+  $('#ai-state').textContent = k ? '✓ AI key saved. The Assistant and the Workout coach can use it.' : 'The Assistant and the Workout coach use a free Google Gemini key.';
+  $('#ai-steps').hidden = !!k; $('#aiDel').hidden = !k; $('#aiKey').placeholder = k ? 'Key saved (•••• ' + k.slice(-4) + '). Paste a new one to replace it.' : 'Paste your key (AIza…)';
+}
+$('#aiSave').onclick = () => {
+  const k = $('#aiKey').value.trim().replace(/\s+/g, '');
+  if (!/^AIza[\w-]{20,}$/.test(k)) { $('#ai-msg').style.color = 'var(--bad)'; $('#ai-msg').textContent = 'That doesn’t look like a Gemini key. It starts with AIza and is about 39 characters.'; return; }
+  try { localStorage.setItem('wl_aikey', k); localStorage.removeItem('wl_aimodel'); } catch {}
+  set('hub.aikey', k); try { localStorage.setItem('hub.changedAt', String(Date.now())); document.dispatchEvent(new CustomEvent('hub:change', { detail: 'aikey' })); } catch {}
+  $('#aiKey').value = ''; $('#ai-msg').style.color = 'var(--good)'; $('#ai-msg').textContent = 'Saved. Tap Test to check it works.'; drawAI(); drawSetup();
+};
+$('#aiTest').onclick = async () => {
+  $('#ai-msg').style.color = 'var(--muted)'; $('#ai-msg').textContent = 'Testing…';
+  try { if (!K.ai) { await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'lib/ai.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); }); }
+    const t = await K.ai('Reply with exactly: Life Hub AI works'); $('#ai-msg').style.color = 'var(--good)'; $('#ai-msg').textContent = '✓ ' + t.slice(0, 80);
+  } catch (e) { $('#ai-msg').style.color = 'var(--bad)'; $('#ai-msg').textContent = /API key not valid|API_KEY_INVALID/i.test(e.message) ? 'Google says the key isn’t valid. Copy it again from AI Studio.' : e.message; }
+};
+$('#aiDel').onclick = () => { if (!confirm('Remove the AI key from this device and your cloud?')) return; try { localStorage.removeItem('wl_aikey'); } catch {} set('hub.aikey', ''); document.dispatchEvent(new CustomEvent('hub:change', { detail: 'aikey' })); drawAI(); drawSetup(); };
+
 /* ---------- set-up checklist ---------- */
 function setupItems() {
   const auth = get('wl_auth', null), st = window.K && K.sync ? K.sync.state() : {};
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   return [
-    ['☁️', 'Log in to sync all your devices', 'Settings → Account (same login as Workout)', !!(auth && auth.rt), '#settings'],
+    ['☁️', 'Log in to sync all your devices', 'Settings → Account (same login as Workout)', !!(auth && auth.rt), '#settings:account'],
     ['📲', 'Install Life Hub', installEvt ? 'Tap to install it on your home screen' : 'So it opens like an app (tap for how)', !!standalone, 'install'],
-    ['🔄', 'Cloud sync working', st.err ? st.err : 'Settings → Cloud sync', !!(auth && auth.rt && st.last && !st.err), '#settings'],
+    ['🔄', 'Cloud sync working', st.err ? st.err : 'Settings → Cloud sync', !!(auth && auth.rt && st.last && !st.err), '#settings:sync'],
     ['🔔', 'Allow notifications', 'For reminders, homework and alarms', 'Notification' in window && Notification.permission === 'granted', 'notify'],
-    ['🌙', 'Reminders when closed', 'Settings → Reminders when Life Hub is closed', !!(get('lh.push', null) || {}).on, '#settings'],
-    ['☀️', 'Morning brief', 'Your day in one notification', K.briefCfg().on, '#settings'],
-    ['🤖', 'AI key for the assistant', 'Workout → You → AI coach (free Gemini key)', !!localStorage.getItem('wl_aikey'), 'workout/'],
+    ['🌙', 'Reminders when closed', 'Settings → Reminders → when Life Hub is closed', !!(get('lh.push', null) || {}).on, '#settings:remind'],
+    ['☀️', 'Morning brief', 'Settings → Morning brief', K.briefCfg().on, '#settings:brief'],
+    ['🤖', 'AI key for the assistant', 'Settings → AI assistant (free Gemini key)', !!localStorage.getItem('wl_aikey'), '#settings:ai'],
     ['🏫', 'Add your timetable', 'School → + (lessons repeat every week)', K.school().lessons.length > 0, 'school/'],
     ['⏰', 'School alarm', 'Alarms → + → School alarm (uses your bus)', K.alarms.all().some(a => a.smart), 'alarm/'],
-    ['🔒', 'PIN lock', 'Settings → Privacy lock (optional)', Hub.hasPin(), '#settings'],
+    ['🔒', 'PIN lock', 'Settings → Privacy lock (optional)', Hub.hasPin(), '#settings:account'],
   ];
 }
 function drawSetup() {
