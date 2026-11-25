@@ -196,3 +196,41 @@
     lockNow: function () { ssSet(SEEN_KEY, ''); showLock(); }
   };
 })();
+
+/* Spotify stats, kept up to date from any page: Spotify only shares your last 50 songs,
+   so Life Hub quietly fetches new plays (at most every 15 min) whenever a page is open. */
+(function () {
+  var J = function (k, d) { try { var v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+  var S = function (k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+  var busy = false;
+  async function token() {
+    var c = J('hub.music', {}) || {}, t = J('hub.music.sp', null);
+    if (c.source !== 'spotify' || !c.clientId || !t || !t.refresh) return null;
+    if (Date.now() < (t.exp || 0)) return t.access;
+    var r = await fetch('https://accounts.spotify.com/api/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ client_id: c.clientId, grant_type: 'refresh_token', refresh_token: t.refresh }) });
+    if (!r.ok) return null;
+    var j = await r.json();
+    S('hub.music.sp', { access: j.access_token, refresh: j.refresh_token || t.refresh, exp: Date.now() + (j.expires_in - 60) * 1000, scope: j.scope || t.scope });
+    return j.access_token;
+  }
+  async function musicSync(force) {
+    if (busy || !navigator.onLine || document.visibilityState !== 'visible') return;
+    if (/\/music\/?(index\.html)?$/.test(location.pathname)) return;   /* the Music page syncs itself */
+    if (!force && Date.now() - (J('hub.music.synced', 0) || 0) < 15 * 60000) return;
+    busy = true;
+    try {
+      var tok = await token(); if (!tok) return;
+      var plays = J('hub.music.plays', []) || [], last = plays.length ? plays[plays.length - 1].t : 0;
+      var r = await fetch('https://api.spotify.com/v1/me/player/recently-played?limit=50' + (last ? '&after=' + last : ''), { headers: { Authorization: 'Bearer ' + tok } });
+      if (!r.ok) { if (r.status === 401) { var t = J('hub.music.sp', {}); t.exp = 0; S('hub.music.sp', t); } return; }
+      var items = ((await r.json()) || {}).items || [];
+      var add = items.map(function (x) { return { t: Date.parse(x.played_at), id: x.track.id, n: x.track.name, a: x.track.artists.map(function (a) { return a.name; }).join(', '), ms: x.track.duration_ms, img: ((x.track.album.images || []).slice(-2)[0] || {}).url || '' }; })
+        .filter(function (p) { return p.t > last; }).sort(function (a, b) { return a.t - b.t; });
+      if (add.length) { var keep = plays.concat(add).filter(function (p) { return p.t > Date.now() - 120 * 864e5; }).slice(-8000); if (!S('hub.music.plays', keep)) S('hub.music.plays', keep.slice(-3000)); }
+      S('hub.music.synced', Date.now());
+    } catch (e) {} finally { busy = false; }
+  }
+  setTimeout(musicSync, 4000);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') setTimeout(musicSync, 1500); });
+  setInterval(musicSync, 15 * 60000);
+})();
