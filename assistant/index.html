@@ -169,6 +169,10 @@ const DO = {
 };
 
 /* =================== conversation =================== */
+function facts() {
+  try { const t = K.ymd(), slim = d => { const x = READ.get_day({ date: d }); return { date: x.date, weekday: x.weekday, items: x.items }; };
+    return JSON.stringify({ today: slim(t), tomorrow: slim(K.addDays(t, 1)), status: READ.get_status() }).slice(0, 9000); } catch { return '{}'; }
+}
 function system() {
   const n = new Date(), lists = K.get('lists', ['Inbox', 'School', 'Personal', 'Gym']);
   const subs = [...new Set(K.school().lessons.map(l => l.subject).concat(K.school().subjects.map(s => s.name)))];
@@ -177,6 +181,7 @@ Now: ${K.DAYS[n.getDay()]} ${K.ymd()} ${K.hm(n)}. Tomorrow is ${K.DAYS[(n.getDay
 Use the tools to look things up before answering questions about their day, school, plans, habits, money or lists. Never invent data.
 When they ask you to add, log, change or remind something, call the matching tool(s) right away (they will confirm on screen). Work out exact dates (YYYY-MM-DD) and times (HH:MM, 24h) yourself from words like "tomorrow", "friday", "next week", "tonight" (19:00). "Remind me" means add_task with a time and remind=true.
 Their to-do lists: ${lists.join(', ')}. School subjects: ${subs.join(', ') || 'none yet'}. Habits: ${K.habits.all().map(h => h.name).join(', ') || 'none'}.
+Already looked up for you (use these; only call get_day/get_week/get_status for other days or more detail): ${facts()}
 Answer short and friendly (usually 1-4 sentences or a short list). Answer in Dutch if they write Dutch. You can't control the Workout app (sets, food, water): tell them to use the Workout coach for that.`;
 }
 function render() {
@@ -208,7 +213,7 @@ async function send(q) {
   try {
     let msgs = chat.filter(m => !m.kind && !m.err).slice(-12).map(m => ({ role: m.role, content: m.content }));
     for (let round = 0; round < 5; round++) {
-      const res = await K.aiTools(msgs, { system: system(), tools: TOOLS });
+      const res = await K.aiTools(msgs, { system: system(), tools: TOOLS, bg: true, notify: K.root + 'assistant/' });
       const reads = res.calls.filter(c => READS.has(c.name)), writes = res.calls.filter(c => !READS.has(c.name) && DO[c.name]);
       if (writes.length) { pending = { calls: writes, text: res.text }; if (res.text) chat.push({ role: 'assistant', content: res.text }); break; }
       if (reads.length) {
@@ -219,8 +224,19 @@ async function send(q) {
       chat.push({ role: 'assistant', content: res.text || 'Okay.' }); break;
     }
   } catch (e) { chat.push({ role: 'assistant', content: '⚠️ ' + e.message, err: true }); }
-  busy = false; save(); render();
+  busy = false; K.put('ai.waiting', null); save(); render();
 }
+/* Android closed Life Hub while you waited: pick up the answer the background helper kept */
+(async function recover() {
+  const w = K.get('ai.waiting', null); if (!w || !window.caches || Date.now() - w.at > 30 * 60000) return;
+  try { const r = await (await caches.open('lh-ai')).match(location.origin + '/__lhai/' + w.id); if (!r) return; const d = await r.json();
+    const parts = (((JSON.parse(d.body || '{}').candidates || [])[0] || {}).content || {}).parts || [], text = parts.filter(p => !p.thought).map(p => p.text || '').join('').trim();
+    const last = chat[chat.length - 1];
+    if (text && last && last.role === 'user') { chat.push({ role: 'assistant', content: text }); save(); render(); }
+    else if (!text && last && last.role === 'user') { K.toast('Your last question needs one more step: tap send to ask again.'); K.$('#q') && (K.$('#q').value = last.content); }
+    K.put('ai.waiting', null); (await caches.open('lh-ai')).delete(location.origin + '/__lhai/' + w.id);
+  } catch {}
+})();
 function doPending() {
   const items = [];
   for (const c of pending.calls) { const label = (DESCRIBE[c.name] || (() => c.name))(c.args); try { DO[c.name](c.args || {}); items.push('✓ ' + label); } catch (e) { items.push(`✗ ${label} — ${esc(e.message)}`); } }
