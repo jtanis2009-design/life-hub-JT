@@ -113,6 +113,8 @@ function profileHtml() {
     <div class="stat"><div class="k">Win rate</div><div class="v num">${Math.round(g.winrate)}<small>%</small></div><div class="s">KDA ${g.kda}</div></div></div>
     <div class="grid2"><div class="stat"><div class="k">Time played</div><div class="v num">${hrs(g.time_played)}</div></div>
     <div class="stat"><div class="k">Per 10 min</div><div class="v num" style="font-size:16px">${g.average.eliminations} elims</div><div class="s">${g.average.deaths} deaths · ${Math.round(g.average.damage)} dmg</div></div></div>`;
+  const P = data.platforms; if (P) { const pt = x => ((x.qp || {}).tp || 0) + ((x.comp || {}).tp || 0), pc = pt(P.pc), co = pt(P.console);
+    h += `<p class="small muted" style="margin:-4px 2px 12px">All modes: <b>${fullHM(pc + co)}</b>${pc && co ? ` (PC ${fullHM(pc)} · console ${fullHM(co)})` : co ? ' on console' : ' on PC'}</p>`; }
   const R = st.roles || {};
   h += `<div class="sec">Roles</div><div class="list">${['tank', 'damage', 'support'].filter(r => R[r]).map(r => { const x = R[r]; return `<div class="item"><span class="body"><span class="title">${ROLE[r]}</span><span class="meta"><span>${hrs(x.time_played)}</span><span>${K.plural(x.games_played, 'game')}</span><span>${Math.round(x.winrate)}% wins</span><span>KDA ${x.kda}</span></span></span></div>`; }).join('')}</div>`;
   const top = Object.entries(st.heroes || {}).sort((a, b) => b[1].time_played - a[1].time_played).slice(0, 3);
@@ -155,7 +157,7 @@ function seasonsHtml() {
     const n = (b.ranks || {}).season || (i ? (snaps[i - 1].ranks || {}).season : 0); if (!n) return;
     const x = get(n); x.from = x.from || b.d; x.to = b.d;
     for (const r of ['open', 'tank', 'damage', 'support']) { const v = (b.ranks || {})[r]; if (!v) continue; if (!x.first[r]) x.first[r] = v; x.last[r] = v; if (rankScore(v) > rankScore(x.peak[r])) x.peak[r] = v; }
-    const a = snaps[i - 1]; if (!a || !b.comp || !a.comp) return;
+    const a = snaps[i - 1]; if (!a || !b.comp || !a.comp || (a.v || 1) !== (b.v || 1)) return;
     const reset = b.comp.gp < a.comp.gp;                                  /* Blizzard started counting again: a new season */
     const d = k => reset ? b.comp[k] : b.comp[k] - a.comp[k];
     x.games += d('gp'); x.won += d('gw'); x.lost += d('gl'); x.tp += d('tp');
@@ -177,7 +179,7 @@ function logHtml() {
   if (snaps.length < 2) return h + `<div class="empty"><b>Your log starts today</b>Life Hub saves your stats every day you open it (any page, every 6 hours) and shows here what changed: games, wins, losses, hours and rank ups and downs.</div>`;
   const rows = [];
   for (let i = snaps.length - 1; i > 0 && rows.length < 60; i--) {
-    const a = snaps[i - 1], b = snaps[i], x = a[key], y = b[key]; if (!x || !y) continue;
+    const a = snaps[i - 1], b = snaps[i], x = a[key], y = b[key]; if (!x || !y || (a.v || 1) !== (b.v || 1)) continue;   /* v2 added console stats: not real games */
     const gp = y.gp - x.gp, gw = y.gw - x.gw, gl = y.gl - x.gl, tp = y.tp - x.tp;
     const rk = Object.keys(b.ranks || {}).filter(r => r !== 'season' && (a.ranks || {})[r] !== b.ranks[r]).map(r => `${OW.cap(r)}: ${(a.ranks || {})[r] || 'unranked'} → <b>${b.ranks[r]}</b>`);
     if (!gp && !rk.length) continue;
@@ -264,7 +266,7 @@ function setup() {
 }
 async function load(force) {
   if (!cfg().tag || loading) return;
-  if (!force && data && Date.now() - data.at < 30 * 60000) return;
+  if (!force && data && data.v === 2 && Date.now() - data.at < 30 * 60000) return;
   loading = true; err = ''; render();
   try { data = await OW.fetchAll(cfg().tag); }
   catch (e) { err = e.code === 404 ? `Overwatch can’t find <b>${esc(cfg().tag)}</b>. Check the BattleTag (capitals and number) and that your career profile is <b>Public</b>. New or just-changed profiles can take a few hours to show up.` : !navigator.onLine ? 'You’re offline.' : esc(e.message); }

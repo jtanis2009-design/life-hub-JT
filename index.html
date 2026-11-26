@@ -190,6 +190,12 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
       <div class="sub" id="t-sub">&nbsp;</div>
     </a>
 
+    <a class="card" data-block="home" id="c-home" href="travel/" style="--c:var(--travel)" data-off="1" hidden>
+      <div class="k"><span class="dot"></span><span id="h-route">🏠 Home after school</span><span class="go">›</span></div>
+      <div class="big num" id="h-main"><span class="skel"></span></div>
+      <div class="sub" id="h-sub">&nbsp;</div>
+    </a>
+
     <a class="card" data-block="workout" id="c-workout" href="workout/" style="--c:var(--workout)">
       <div class="k"><span class="dot"></span><span>Workout today</span><span class="go">›</span></div>
       <div class="big" id="wo-main"><span class="skel"></span></div>
@@ -519,6 +525,29 @@ function busCard() {
   const checked = st.at ? ` · checked ${Math.max(0, Math.round((Date.now() - st.at) / 60000))} min ago` : '';
   $('#t-sub').innerHTML = `${status}${w.stop ? ' · ' + esc(w.stop) : ''}${mp && mp.arrive ? ' · at school ' + mp.arrive : ''}${mp && mp.earlier ? ` · last one that works: ${mp.lastBus}` : ''}${checked}`;
   return true;
+}
+/* 🏠 on school days: the first ride home after your last lesson (school → home of your Travel trip), with live delays */
+async function loadHome() {
+  const el = $('#c-home'); if (!el || !window.K || !K.lessonsOn) return;
+  const ls = K.lessonsOn(K.ymd()), trip = K.schoolTrip && K.schoolTrip(), hide = () => { el.dataset.off = '1'; el.hidden = true; };
+  if (!ls.length || !trip) return hide();
+  const end = ls[ls.length - 1].end, [eh, em] = end.split(':').map(Number), endAt = new Date(); endAt.setHours(eh, em, 0, 0);
+  if (Date.now() > endAt.getTime() + 3 * 36e5) return hide();          /* long home by now */
+  delete el.dataset.off; if (!layout().hidden.includes('home')) el.hidden = false;
+  $('#h-route').textContent = `🏠 Home after school · ${trip.b.short || trip.b.name} → ${trip.a.short || trip.a.name}`;
+  try {
+    const from = new Date(Math.max(endAt.getTime() + 3 * 60000, Date.now()));   /* a few minutes to get out of class */
+    const q = new URLSearchParams({ fromPlace: trip.b.place, toPlace: trip.a.place, time: from.toISOString() });
+    const r = await fetch('https://api.transitous.org/api/v5/plan?' + q); if (!r.ok) throw new Error(r.status);
+    const its = ((await r.json()).itineraries || []).filter(it => !it.legs.some(l => l.cancelled) && Date.parse(it.startTime) >= from.getTime() - 60000).sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime));
+    const it = its[0]; if (!it) { $('#h-main').textContent = 'No ride found'; $('#h-sub').textContent = `School ends ${end}. Check Travel.`; return; }
+    const r1 = it.legs.find(l => !['WALK', 'BIKE', 'CAR'].includes(l.mode)), dep = new Date(r1 ? r1.startTime : it.startTime);
+    const delay = r1 && r1.scheduledStartTime ? mins(new Date(r1.startTime) - new Date(r1.scheduledStartTime)) : 0;
+    const line = r1 ? `${MODE[r1.mode] || 'Ride'} ${esc(r1.routeShortName || r1.displayName || '')}` : 'Walk';
+    $('#h-main').innerHTML = `${line} ${hm(dep)} <span style="font-weight:600;font-size:16px;color:var(--muted)">· home ${hm(new Date(it.endTime))}</span>`;
+    const status = delay > 0 ? `<span class="late">+${delay} min late</span>` : r1 && r1.realTime ? '<span class="ontime">On time</span>' : '';
+    $('#h-sub').innerHTML = [`School ends ${end}`, `leave ${hm(new Date(it.startTime))}`, r1 && r1.from ? esc(r1.from.name) : '', status, its[1] ? `then ${hm(new Date(its[1].startTime))}` : ''].filter(Boolean).join(' · ');
+  } catch { $('#h-main').textContent = 'Times unavailable'; $('#h-sub').textContent = `School ends ${end}.`; }
 }
 async function loadTrip() {
   if (busCard()) { if (window.LHBus) LHBus.check().then(busCard); return; }
@@ -1052,12 +1081,12 @@ document.addEventListener('change', e => {
 });
 
 /* ---------- Today layout (which cards, in which order) ---------- */
-const BLOCKS = [['setup', '✅ Set-up checklist'], ['ask', '✦ Ask Life Hub'], ['weather', '🌦️ Weather'], ['trip', '🚌 Next trip'], ['workout', '🏋️ Workout today'], ['plan', '📋 Today’s plan'],
+const BLOCKS = [['setup', '✅ Set-up checklist'], ['ask', '✦ Ask Life Hub'], ['weather', '🌦️ Weather'], ['trip', '🚌 Next trip'], ['home', '🏠 Home after school'], ['workout', '🏋️ Workout today'], ['plan', '📋 Today’s plan'],
   ['life', '✅ To-do · Habits · Countdown'], ['fun', '⏰ Alarm · Music · Anime'], ['daily', '😴 Sleep · Money · Shopping'], ['body', '💧 Water · Protein · Caffeine']];
-function layout() { const l = get('hub.layout', null) || {}; const order = (l.order || []).filter(k => BLOCKS.some(b => b[0] === k)); BLOCKS.forEach(b => { if (!order.includes(b[0])) order.push(b[0]); }); return { order, hidden: l.hidden || [] }; }
+function layout() { const l = get('hub.layout', null) || {}; const order = (l.order || []).filter(k => BLOCKS.some(b => b[0] === k)); if (order.length && !order.includes('home')) order.splice(order.indexOf('trip') + 1 || order.length, 0, 'home'); BLOCKS.forEach(b => { if (!order.includes(b[0])) order.push(b[0]); }); return { order, hidden: l.hidden || [] }; }
 function applyLayout() {
   const L = layout(), su = $('#c-setup'); main = $('#v-today'), note = main.querySelector('[data-block-note]');
-  for (const k of L.order) { const el = main.querySelector(`[data-block="${k}"]`); if (!el) continue; main.appendChild(el); el.hidden = L.hidden.includes(k) || (k === 'setup' && (el.dataset.all === '1' || !$('#su-list').innerHTML)); if (k === 'body' && note) { main.appendChild(note); note.hidden = el.hidden; } }
+  for (const k of L.order) { const el = main.querySelector(`[data-block="${k}"]`); if (!el) continue; main.appendChild(el); el.hidden = L.hidden.includes(k) || (k === 'setup' && (el.dataset.all === '1' || !$('#su-list').innerHTML)) || (k === 'home' && el.dataset.off !== undefined && el.dataset.off === '1'); if (k === 'body' && note) { main.appendChild(note); note.hidden = el.hidden; } }
 }
 function drawLayout() {
   const L = layout();
@@ -1076,11 +1105,11 @@ document.addEventListener('change', e => {
 });
 
 /* ---------- start ---------- */
-function refreshAll() { greet(); drawWorkout(); drawPlan(); drawBackupBanner(); loadTrip(); loadWeather(); drawSetup(); planMornings(); }
+function refreshAll() { greet(); drawWorkout(); drawPlan(); drawBackupBanner(); loadTrip(); loadHome(); loadWeather(); drawSetup(); planMornings(); }
 /* the bus-based school morning, so the alarm tile and brief are right */
 async function planMornings() { if (!K.alarms.all().some(a => a.smart && a.on) && !K.briefCfg().on) return; const d = K.nextSchoolDay(); if (d && await K.planMorning(d)) drawPlan(); }
 drawApps(); applyLayout(); route(); refreshAll(); drawSettings(); drawLayout(); drawPins();
-setInterval(() => { if (document.visibilityState === 'visible') { loadTrip(); drawWorkout(); drawPlan(); } }, 60000);
+setInterval(() => { if (document.visibilityState === 'visible') { loadTrip(); loadHome(); drawWorkout(); drawPlan(); } }, 60000);
 setInterval(() => { if (document.visibilityState === 'visible') loadWeather(); }, 15 * 60000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshAll(); });
 addEventListener('storage', () => { drawWorkout(); drawPlan(); });
