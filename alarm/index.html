@@ -108,9 +108,9 @@ function edit(a, preset) {
       { k: 'label', label: 'Label', value: a.label, placeholder: a.smart ? 'School' : 'e.g. Gym, Work' },
       { k: 'sound', label: 'Sound', type: 'select', value: a.sound || 'beep', options: soundOptions() },
       { type: 'html', k: '_snd', html: `<div class="row-btns" style="margin:-4px 0 12px"><button class="btn sm" type="button" data-formtest>🔊 Test</button><button class="btn sm" type="button" data-formyt>+ YouTube song</button></div>` },
-      { k: 'fade', label: 'Gets louder over', type: 'seg', value: a.fade ?? 40, options: [[0, 'Loud now'], [20, '20 s'], [40, '40 s'], [90, '1½ min'], [180, '3 min']] },
+      { k: 'fade', label: 'Gets louder over (starts at 40%)', type: 'seg', value: Math.min(15, a.fade ?? 10), options: [[0, 'Loud now'], [5, '5 s'], [10, '10 s'], [15, '15 s'], [90, '1½ min'], [180, '3 min']] },
       { k: 'vol', label: 'Song volume', type: 'seg', value: a.vol || 100, options: [[40, 'Soft'], [70, 'Medium'], [100, 'Full']] },
-      { k: 'beepsAfter', label: 'Still asleep? Add beeps after', type: 'seg', value: a.beepsAfter ?? 3, options: [[0, 'Never'], [1, '1 min'], [3, '3 min'], [5, '5 min'], [10, '10 min']] },
+      { k: 'beepsAfter', label: 'Still asleep? Add beeps after', type: 'seg', value: a.beepsAfter ?? 1, options: [[0, 'Never'], [1, '1 min'], [3, '3 min'], [5, '5 min'], [10, '10 min']] },
       { k: 'backups', label: 'Back-up alarms after it (in case you fall asleep again)', type: 'seg', value: a.backups ?? 3, options: [[0, 'None'], [1, '1'], [2, '2'], [3, '3'], [4, '4']] },
       { k: 'gap', label: 'Minutes between them', type: 'seg', value: a.gap || 10, options: [[5, '5 min'], [10, '10 min'], [15, '15 min']] },
       { k: 'snooze', label: 'Snooze minutes', type: 'number', value: a.snooze || 9, half: true },
@@ -147,7 +147,7 @@ function systemAlarm(a) {
 }
 function clockApp(a, t) {
   const [h, m] = t.split(':').map(Number);
-  const url = `intent:#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.alarm.HOUR=${h};i.android.intent.extra.alarm.MINUTES=${m};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(a.label || 'Life Hub')};end`;
+  const url = `intent:#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.alarm.HOUR=${h};i.android.intent.extra.alarm.MINUTES=${m};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(a.label || 'Life Hub')};B.android.intent.extra.alarm.SKIP_UI=true;end`;
   const before = Date.now(); location.href = url;
   setTimeout(() => { if (document.visibilityState === 'visible' && Date.now() - before < 3000) K.form({ title: 'Set it in your Clock app', saveLabel: 'OK', fields: [{ type: 'html', k: 'x', html: `<p>Your phone didn’t open the Clock app from here. Open <b>Clock</b> yourself and add an alarm for <b style="font-size:20px">${t}</b>${a.smart ? ' (school alarm: check the time each evening, it follows your timetable)' : ''}.</p>` }], save: () => {} }); }, 1500);
 }
@@ -157,6 +157,15 @@ async function startNight() {
   const ctx = new (window.AudioContext || window.webkitAudioContext)(); await ctx.resume();
   let lock = null; try { lock = await navigator.wakeLock.request('screen'); } catch {}
   night = { ctx, lock, ringing: false, snoozeUntil: 0, fired: {}, lastCheck: Date.now() };
+  /* keep Life Hub awake all night: a sound too quiet to hear keeps Android from pausing the page */
+  try { const keep = ctx.createBufferSource(), kb = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), kd = kb.getChannelData(0); for (let i = 0; i < kd.length; i++) kd[i] = Math.sin(2 * Math.PI * 25 * i / ctx.sampleRate) * 0.012;   /* 25 Hz: too low for a phone speaker to play, but it counts as sound */
+    const kg = ctx.createGain(); kg.gain.value = 1; keep.buffer = kb; keep.loop = true; keep.connect(kg); kg.connect(ctx.destination); keep.start(); night.keep = keep; } catch {}
+  /* how loud will it be? one short burst at full alarm volume */
+  try { const src = ctx.createBufferSource(); src.buffer = night.alarmBuf = alarmBuffer(ctx); src.connect(ctx.destination); src.start(); src.stop(ctx.currentTime + 0.9); } catch {}
+  setTimeout(() => K.form({ title: '🌙 Night mode is on', saveLabel: 'Got it', fields: [{ type: 'html', k: 'x', html: `<ul style="line-height:1.7;padding-left:18px;margin:0">
+    <li>That beep was your alarm’s real loudness. Too soft? Turn up the <b>media volume</b> (volume button → the music slider). Life Hub uses that, not the alarm volume.</li>
+    <li><b>Don’t lock the phone</b> or switch apps: the screen stays on, very dim. Put it on the <b>charger</b>.</li>
+    <li>Keep the <b>Clock app alarms</b> as a back-up (⏰ Set in Clock app).</li></ul>` }], save: () => {} }), 1200);
   if (!K.get('sleep.pending', null)) K.put('sleep.pending', `${K.ymd()}T${K.hm(new Date())}`);
   const el = document.createElement('div'); el.id = 'night';
   el.innerHTML = `<div class="clock" id="nClock"></div><div class="sub" id="nSub"></div>
@@ -174,7 +183,7 @@ async function startNight() {
     if (soon || Date.now() - night.planAt > 30 * 60000) { night.planAt = Date.now(); planAhead(true); } }, 2 * 60000);
   document.addEventListener('visibilitychange', relock);
 }
-async function relock() { if (night && document.visibilityState === 'visible' && (!night.lock || night.lock.released)) { try { night.lock = await navigator.wakeLock.request('screen'); } catch {} } }
+async function relock() { if (night && document.visibilityState === 'visible') { try { night.ctx.resume(); } catch {} tickNight(); if (!night.lock || night.lock.released) { try { night.lock = await navigator.wakeLock.request('screen'); } catch {} } } }
 function tickNight() {
   if (!night) return;
   /* look back to the last check, so an alarm is never missed when the phone paused the app for a moment */
@@ -200,8 +209,8 @@ function ring(a, title) {
   const tone = pickTone(a); night.song = tone;
   if (tone) {
     K.$('#nSub').textContent = ((a && a.label) || 'Wake up!') + ' · ♪ ' + tone.name;
-    playTone(tone, { ring: true, fade: a.fade ?? 40, vol: a.vol || 100 }).then(ok => { if (!ok && night && night.ringing) startBeeps(); });
-    const after = a.beepsAfter ?? 3; if (after) night.escalate = setTimeout(() => { if (night && night.ringing) startBeeps(); }, after * 60000);   /* still asleep: beeps on top */
+    playTone(tone, { ring: true, fade: Math.min(15, a.fade ?? 10), vol: a.vol || 100 }).then(ok => { if (!ok && night && night.ringing) startBeeps(); });
+    const after = a.beepsAfter ?? 1; if (after) night.escalate = setTimeout(() => { if (night && night.ringing) startBeeps(); }, after * 60000);   /* still asleep: beeps on top */
   } else startBeeps(a);
 }
 /* on the ringing screen: today's tests, homework, first lesson, your bus (live) and plans, so you wake up knowing your day */
@@ -216,17 +225,29 @@ function showDayInfo() {
   el.innerHTML = L.length ? tests.map(x => `<div style="font-weight:800;color:#ffd36b">${esc(x)}</div>`).join('') + rest.slice(0, 5).map(x => `<div>${esc(x)}</div>`).join('') : '';
   el.style.display = L.length ? '' : 'none';
 }
+/* the alarm sound: one 2.4 s pattern played on a loop by the phone's audio system,
+   so it keeps ringing even when Android pauses Life Hub's code (that's what made it 1 soft beep) */
+function alarmBuffer(ctx) {
+  const sr = ctx.sampleRate, len = Math.floor(sr * 2.4), buf = ctx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+  const beeps = [[0, 880], [0.22, 1320], [0.44, 880], [0.66, 1320], [1.2, 988], [1.42, 1480], [1.64, 988], [1.86, 1480]];
+  for (const [t0, f] of beeps) { const s0 = Math.floor(t0 * sr), n = Math.floor(0.17 * sr);
+    for (let i = 0; i < n && s0 + i < len; i++) { const t = i / sr, env = Math.min(1, i / (0.005 * sr), (n - i) / (0.01 * sr));
+      d[s0 + i] += env * 0.85 * (Math.sign(Math.sin(2 * Math.PI * f * t)) * 0.6 + Math.sin(2 * Math.PI * f * 2 * t) * 0.4); } }   /* harsh square-ish tone: hard to sleep through */
+  return buf;
+}
 function startBeeps(a) {
   if (!night || night.beeper) return;
-  const fade = a && a.fade != null ? a.fade : 40;
-  const ctx = night.ctx, t0 = ctx.currentTime, g = ctx.createGain(); g.connect(ctx.destination); g.gain.setValueAtTime(fade ? 0.02 : 0.9, t0); g.gain.linearRampToValueAtTime(0.9, t0 + Math.max(0.1, fade));   /* gets louder over 40 s */
-  night.gain = g; night.oscs = [];
-  const beep = () => { if (!night || !night.ringing) return; const now = ctx.currentTime; [0, .25, .5].forEach((d, i) => { const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = i === 2 ? 1046 : 880; const e = ctx.createGain(); e.gain.setValueAtTime(0, now + d); e.gain.linearRampToValueAtTime(1, now + d + .02); e.gain.linearRampToValueAtTime(0, now + d + .2); o.connect(e); e.connect(g); o.start(now + d); o.stop(now + d + .22); }); if (navigator.vibrate) navigator.vibrate([400, 200, 400]); };
-  beep(); night.beeper = setInterval(beep, 1300);
+  const fade = Math.min(15, a && a.fade != null ? a.fade : 10), ctx = night.ctx;
+  try { ctx.resume(); } catch {}
+  const t0 = ctx.currentTime, g = ctx.createGain(); g.connect(ctx.destination);
+  g.gain.setValueAtTime(fade ? 0.4 : 1, t0); g.gain.linearRampToValueAtTime(1, t0 + Math.max(0.1, fade));   /* 40% → full in ≤ 15 s */
+  const src = ctx.createBufferSource(); src.buffer = night.alarmBuf || (night.alarmBuf = alarmBuffer(ctx)); src.loop = true; src.connect(g); src.start();
+  night.gain = g; night.beeper = src;
+  night.buzz = setInterval(() => { if (navigator.vibrate) navigator.vibrate([600, 300, 600]); }, 1500);
 }
-function stopRing() { if (!night) return; night.ringing = false; clearInterval(night.beeper); night.beeper = null; clearTimeout(night.escalate); stopTone(); if (navigator.vibrate) navigator.vibrate(0); try { night.gain.disconnect(); } catch {} K.$('#night')?.classList.remove('ring'); }
+function stopRing() { if (!night) return; night.ringing = false; try { night.beeper && night.beeper.stop(); } catch {} clearInterval(night.buzz); night.beeper = null; clearTimeout(night.escalate); stopTone(); if (navigator.vibrate) navigator.vibrate(0); try { night.gain.disconnect(); } catch {} K.$('#night')?.classList.remove('ring'); }
 function stopNight(woke) {
-  if (!night) return; stopRing(); clearInterval(night.timer); clearInterval(night.planner); try { night.lock && night.lock.release(); } catch {} try { night.ctx.close(); } catch {}
+  if (!night) return; stopRing(); try { night.keep && night.keep.stop(); } catch {} clearInterval(night.timer); clearInterval(night.planner); try { night.lock && night.lock.release(); } catch {} try { night.ctx.close(); } catch {}
   document.removeEventListener('visibilitychange', relock); K.$('#night')?.remove(); try { document.exitFullscreen(); } catch {}
   const p = K.get('sleep.pending', null);
   if (woke && p) {
@@ -562,7 +583,7 @@ function markBad(t, code) { const s = code === 101 || code === 150 ? 'blocked' :
 /* play a sound; resolves true when it's really playing. o = { ring, fade (s), vol (%), muted } */
 async function playTone(t, o = {}) {
   stopTone();
-  const top = o.muted ? 0 : (o.vol || 100), fade = o.ring ? (o.fade ?? 40) : 0, startVol = o.muted ? 0 : fade ? Math.min(top, 12) : top;
+  const top = o.muted ? 0 : (o.vol || 100), fade = o.ring ? (o.fade ?? 40) : 0, startVol = o.muted ? 0 : fade ? Math.min(top, 40) : top;
   let v = startVol; const step = fade ? (top - startVol) / fade : 0;
   try {
     if (t.kind === 'sp') { if (o.muted) return true; return await spPlay(t, o, top, startVol, step); }
@@ -664,6 +685,7 @@ fixNames();
   if (h.startsWith('addsong=') && spLink(h)) addSpSongs([spLink(h)]);
   else if (h.startsWith('addsong=')) { const link = h.slice(8); const id = ytId(link); if (id) addSongs([{ id, start: ytStart(link) }], []); else addYouTube(null, link); }
   else if (h.startsWith('audio=')) { const fl = await K.files.get(h.slice(6)).catch(() => null); if (fl) { const t = { id: K.uid(), kind: 'file', fileId: fl.id, name: String(fl.name || 'Sound').replace(/\.[a-z0-9]+$/i, '').slice(0, 70), start: 0, status: 'ok', at: Date.now() }; TONES.upsert(t); render(); K.toast('Sound added. Pick the best part ✂️'); studio(t); } }
+  else if (h === 'clock') { const nx = K.nextAlarm(); if (nx) systemAlarm(nx.a); }
   else if (h === 'sounds') document.querySelector('[data-act="addSound"]')?.scrollIntoView({ block: 'center' });
 })();
 setInterval(() => { if (!night && document.visibilityState === 'visible') render(); }, 30000);
