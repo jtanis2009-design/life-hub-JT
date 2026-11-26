@@ -78,6 +78,7 @@ function render() {
   let html = K.header('Overwatch', 'ow', cfg().tag ? `<button class="iconbtn" type="button" data-act="setup" aria-label="Overwatch settings">${K.svg('gear')}</button>` : '');
   html += `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}${k === 'weapons' && heroes.length && counts().own ? `<span class="n">${counts().own}</span>` : ''}</button>`).join('')}</div>`;
   if (tab === 'weapons') html += weaponsHtml();
+  else if (tab === 'seasons' && (!cfg().tag || !data || data.private)) html += seasonsHtml();
   else if (!cfg().tag) html += setupHtml();
   else {
     if (err) html += `<div class="card" style="border-color:var(--bad)"><b style="color:var(--bad)">Couldn’t load your stats</b><p class="small muted" style="margin:4px 0 0">${err}</p></div>`;
@@ -168,13 +169,50 @@ function seasonsHtml() {
     x.games += d('gp'); x.won += d('gw'); x.lost += d('gl'); x.tp += d('tp');
   });
   if (cur.season && !S[cur.season]) { const x = get(cur.season); for (const r of ['open', 'tank', 'damage', 'support']) if (cur[r]) x.first[r] = x.last[r] = x.peak[r] = OW.rankText(cur[r]); }
+  /* seasons you typed in yourself (from memory, a tracker site or a screenshot) fill what Life Hub didn't see */
+  for (const [n, p] of Object.entries(K.get('owpast', {}) || {})) { const x = get(+n); x.manual = true;
+    if (!x.games && p.games) { x.games = +p.games || 0; x.won = +p.won || 0; x.lost = +p.lost || 0; x.tp = (+p.hours || 0) * 3600; }
+    for (const r of ['open', 'tank', 'damage', 'support']) if (p[r] && !x.last[r]) { x.last[r] = p[r]; x.peak[r] = p[r + 'Peak'] || p[r]; } }
   const list = Object.values(S).sort((a, b) => b.n - a.n);
-  let h = `<p class="hint">Blizzard only shows your current season, so Life Hub keeps its own history from the stats it saves every day. It starts from when you linked your BattleTag.</p>`;
+  const tg = list.reduce((a, x) => a + x.games, 0), th = list.reduce((a, x) => a + x.tp, 0);
+  let h = `<p class="hint">Blizzard only shows your current season, so Life Hub keeps its own history from the stats it saves every day. Older seasons: add them yourself.</p>
+    <div class="row-btns" style="margin:0 2px 12px"><button class="btn sm primary" type="button" data-past="new">+ Add a past season</button></div>`;
+  if (tg) h += `<div class="grid2"><div class="stat"><div class="k">All seasons here</div><div class="v num">${tg}<small> games</small></div><div class="s">${list.length} season${list.length > 1 ? 's' : ''}</div></div><div class="stat"><div class="k">Competitive time</div><div class="v num">${Math.round(th / 3600)}<small> h</small></div><div class="s">${Math.round(list.reduce((a, x) => a + x.won, 0) / tg * 100)}% wins</div></div></div>`;
   if (!list.length) return h + `<div class="empty"><b>No season data yet</b>Open this page now and then: every day adds to your season history.</div>`;
   return h + list.map(x => { const live = x.n === cur.season, rows = ['open', 'tank', 'damage', 'support'].filter(r => x.last[r]);
-    return `<div class="card"><div class="k">Season ${x.n}${live ? ' · <span style="color:var(--ct)">now</span>' : ''}${x.from ? ` · <span class="muted">${K.fmtDay(x.from)} – ${K.fmtDay(x.to)}</span>` : ''}</div>
+    return `<div class="card"><div class="k">Season ${x.n}${live ? ' · <span style="color:var(--ct)">now</span>' : ''}${x.manual ? ` · <button type="button" data-past="${x.n}" style="color:var(--ct);font-weight:700">✏️ edit</button>` : ''}${x.from ? ` · <span class="muted">${K.fmtDay(x.from)} – ${K.fmtDay(x.to)}</span>` : ''}</div>
       ${x.games ? `<div class="grid2" style="margin:10px 0 6px"><div class="stat"><div class="k">Games</div><div class="v num">${x.games}</div><div class="s"><span class="wl"><span class="w">${x.won}W</span> · <span class="l">${x.lost}L</span></span></div></div><div class="stat"><div class="k">Win rate · time</div><div class="v num">${Math.round(x.won / x.games * 100)}<small>%</small></div><div class="s">${fullHM(x.tp)} played</div></div></div>` : `<p class="small muted" style="margin:6px 0">No competitive games logged yet this season.</p>`}
-      ${rows.length ? `<div class="list" style="margin:0">${rows.map(r => `<div class="item" style="min-height:0;padding:9px 12px"><span class="body"><span class="title">${r === 'open' ? '⭐ Open Queue' : ROLE[r]}</span><span class="meta"><span>start ${x.first[r]}</span><span>peak <b>${x.peak[r]}</b></span></span></span><span class="right">${x.last[r]}</span></div>`).join('')}</div>` : ''}</div>`; }).join('');
+      ${rows.length ? `<div class="list" style="margin:0">${rows.map(r => `<div class="item" style="min-height:0;padding:9px 12px"><span class="body"><span class="title">${r === 'open' ? '⭐ Open Queue' : ROLE[r]}</span><span class="meta">${x.first[r] ? `<span>start ${x.first[r]}</span>` : ''}<span>peak <b>${x.peak[r]}</b></span></span></span><span class="right">${x.last[r]}</span></div>`).join('')}</div>` : ''}</div>`; }).join('');
+}
+const rankFix = t => { const m = String(t || '').trim().toLowerCase().match(/^(bronze|silver|gold|platinum|plat|diamond|master|masters|grandmaster|gm|champion)\s*(\d)?$/); if (!m) return String(t || '').trim();
+  const d = { plat: 'platinum', masters: 'master', gm: 'grandmaster' }[m[1]] || m[1]; return OW.cap(d) + (m[2] ? ' ' + m[2] : ''); };
+function pastSeason(n) {
+  const all = K.get('owpast', {}) || {}, p = n === 'new' ? {} : all[n] || {};
+  const R = ['open', 'tank', 'damage', 'support'], L = { open: '⭐ Open Queue', tank: 'Tank', damage: 'Damage', support: 'Support' };
+  const f = K.form({ title: n === 'new' ? 'Add a past season' : 'Season ' + n, fields: [
+    { type: 'html', k: 'shot', html: `<div class="row-btns" style="margin:-4px 0 10px"><button class="btn sm" type="button" data-pastshot>📸 Read from a screenshot</button></div><p class="small muted" style="margin:0 0 10px">Fill in what you know. Ranks like <b>Gold 3</b> or just <b>Diamond</b>.</p>` },
+    { k: 'season', label: 'Season number', type: 'number', value: n === 'new' ? '' : n, required: true, half: true },
+    { k: 'hours', label: 'Hours played', type: 'number', value: p.hours || '', half: true },
+    { k: 'games', label: 'Games', type: 'number', value: p.games || '', half: true },
+    { k: 'won', label: 'Wins', type: 'number', value: p.won || '', half: true },
+    { k: 'lost', label: 'Losses', type: 'number', value: p.lost || '' },
+    ...R.flatMap(r => [{ k: r, label: L[r] + ': end rank', value: p[r] || '', half: true }, { k: r + 'Peak', label: 'peak', value: p[r + 'Peak'] || '', half: true }])],
+    save(v) { const sn = Math.round(+v.season); if (!(sn > 0)) { K.toast('Fill in the season number'); return false; }
+      const o = { games: +v.games || 0, won: +v.won || 0, lost: +v.lost || 0, hours: +v.hours || 0 }; for (const r of R) { if (v[r]) o[r] = rankFix(v[r]); if (v[r + 'Peak']) o[r + 'Peak'] = rankFix(v[r + 'Peak']); }
+      if (n !== 'new' && +n !== sn) delete all[n]; all[sn] = o; K.put('owpast', all); render(); K.toast(`Season ${sn} saved`); },
+    del: n === 'new' ? null : () => { if (!confirm(`Remove what you typed for season ${n}?`)) return false; delete all[n]; K.put('owpast', all); render(); } });
+  f.querySelector('[data-pastshot]').onclick = () => {
+    if (!K.aiReady || !K.aiReady()) return K.toast('Reading screenshots needs the AI key (Settings → AI assistant).');
+    const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
+    i.onchange = async () => { const img = i.files[0]; if (!img) return; K.toast('Reading the screenshot…');
+      try { if (!K.ai) await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = '../lib/ai.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+        const raw = await K.ai('Screenshot of Overwatch 2 competitive stats for one season (from the game or a tracker site). Reply JSON only: {"season":number|null,"games":number|null,"won":number|null,"lost":number|null,"hours":number|null,"open":"Gold 3"|null,"openPeak":null,"tank":null,"tankPeak":null,"damage":null,"damagePeak":null,"support":null,"supportPeak":null}. Ranks as Division + tier like "Diamond 2". open = Open Queue. Use null when not shown.', { json: true, images: [img] });
+        const j = JSON.parse(String(raw).replace(/^```json|```$/g, '').trim()); let got = 0;
+        for (const [k, v] of Object.entries(j)) if (v != null && f.elements[k] && !f.elements[k].value) { f.elements[k].value = v; got++; }
+        K.toast(got ? `Filled in ${got} field${got > 1 ? 's' : ''}. Check them, then Save.` : 'Couldn’t find season stats in that screenshot.');
+      } catch { K.toast('Couldn’t read that screenshot.'); } };
+    i.click();
+  };
 }
 function roleTabs() { return `<div class="tabs">${[['all', 'All'], ['tank', 'Tank'], ['damage', 'Damage'], ['support', 'Support']].map(([k, l]) => `<button type="button" data-role="${k}" aria-pressed="${role === k}">${l}</button>`).join('')}</div>`; }
 /* game log: what changed between the daily snapshots */
@@ -282,6 +320,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
   if (d.tab) { tab = d.tab; K.put('ow.tab', tab); role = 'all'; q = ''; render(); window.scrollTo(0, 0); }
   else if (d.mode) { mode = d.mode; K.put('ow.mode', mode); render(); }
+  else if (d.past) pastSeason(d.past);
   else if (d.hmode) { hmode = d.hmode; K.put('ow.hmode', hmode); render(); }
   else if (d.role) { role = d.role; render(); }
   else if (d.hero) heroSheet(d.hero);
