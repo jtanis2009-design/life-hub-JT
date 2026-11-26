@@ -79,6 +79,7 @@ function render() {
   html += `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}${k === 'weapons' && heroes.length && counts().own ? `<span class="n">${counts().own}</span>` : ''}</button>`).join('')}</div>`;
   if (tab === 'weapons') html += weaponsHtml();
   else if (tab === 'seasons' && (!cfg().tag || !data || data.private)) html += seasonsHtml();
+  else if (tab === 'heroes' && (!cfg().tag || !data || data.private) && Object.keys(K.get('owpasthero', {}) || {}).length) { hmode = 'seasons'; html += heroesHtml(); }
   else if (!cfg().tag) html += setupHtml();
   else {
     if (err) html += `<div class="card" style="border-color:var(--bad)"><b style="color:var(--bad)">Couldn’t load your stats</b><p class="small muted" style="margin:4px 0 0">${err}</p></div>`;
@@ -132,7 +133,15 @@ const fullHM = sec => `${Math.floor(sec / 3600)}h ${K.pad(Math.floor(sec % 3600 
 let hmode = K.get('ow.hmode', 'all');
 /* every hero, Quick Play + Competitive added up (or one of them) */
 function heroStats() {
-  const pick = m => ((m === 'competitive' ? data.comp : data.qp) || {}).heroes || {};
+  const pick = m => (((data || {})[m === 'competitive' ? 'comp' : 'qp']) || {}).heroes || {};
+  if (hmode === 'seasons') {   /* every imported season added up: [minutes, games won, win %] per hero */
+    const key = n => { const k = String(n).toLowerCase().replace(/[úù]/g, 'u').replace(/ö/g, 'o').replace(/[: .]+/g, '-').replace(/-+$/, ''); return heroes.find(h => h.name === n || h.key === k)?.key || k; };
+    const o = {};
+    for (const hs of Object.values(K.get('owpasthero', {}) || {})) for (const [name, [m, w, wr]] of Object.entries(hs)) {
+      const k = key(name), x = o[k] = o[k] || { time_played: 0, games_won: 0, wsum: 0, wmin: 0, seasons: 0 };
+      x.time_played += m * 60; x.games_won += w; x.seasons++; if (wr != null && m >= 5) { x.wsum += wr * m; x.wmin += m; } }
+    return Object.entries(o).map(([k, x]) => [k, Object.assign(x, { winrate: x.wmin ? x.wsum / x.wmin : 0, past: true })]);
+  }
   if (hmode !== 'all') return Object.entries(pick(hmode)).map(([k, x]) => [k, Object.assign({}, x)]);
   const out = {}, add = (m, k, x) => { const o = out[k] = out[k] || { time_played: 0, games_played: 0, games_won: 0, elim: 0, ast: 0, dth: 0, qp: 0, comp: 0 };
     o.time_played += x.time_played || 0; o.games_played += x.games_played || 0; o.games_won += x.games_won || 0; o[m] += x.time_played || 0;
@@ -143,18 +152,19 @@ function heroStats() {
 }
 function heroRow([k, x], i, arr) {
   const hb = heroBy(k), max = arr && arr[0] ? arr[0][1].time_played : x.time_played;
+  if (x.past) return `<div class="hero">${hb.portrait ? `<img onerror="this.style.visibility='hidden'" src="${esc(hb.portrait)}" alt="" loading="lazy">` : '<span class="ph"></span>'}<span class="body"><b>${esc(hb.name)} <span style="float:right;font-variant-numeric:tabular-nums">${fullHM(x.time_played)}</span></b><span class="m">${K.plural(x.games_won, 'game')} won · ≈${Math.round(x.winrate)}% wins · ${K.plural(x.seasons, 'season')}</span><span class="progress"><i style="width:${Math.max(3, x.time_played / max * 100)}%"></i></span></span></div>`;
   const split = x.qp != null && x.comp != null ? `<span class="m" style="display:block">Quick Play ${fullHM(x.qp)} · Competitive this season ${fullHM(x.comp)}</span>` : '';
   return `<div class="hero">${hb.portrait ? `<img onerror="this.style.visibility='hidden'" src="${esc(hb.portrait)}" alt="" loading="lazy">` : '<span class="ph"></span>'}<span class="body"><b>${esc(hb.name)} <span style="float:right;font-variant-numeric:tabular-nums">${fullHM(x.time_played)}</span></b><span class="m">${K.plural(x.games_played, 'game')} · ${Math.round(x.winrate)}% wins · KDA ${x.kda}</span>${split}<span class="progress"><i style="width:${Math.max(3, x.time_played / max * 100)}%"></i></span></span></div>`;
 }
 function heroesHtml() {
   const list = heroStats().filter(([k]) => role === 'all' || heroBy(k).role === role).filter(([, x]) => x.time_played > 0).sort((a, b) => b[1].time_played - a[1].time_played);
   const total = list.reduce((a, [, x]) => a + x.time_played, 0);
-  return `<p class="hint">Blizzard’s profile has Quick Play from the start, but Competitive only for the current season (it resets every season). Life Hub keeps past seasons in the Seasons tab from now on; Steam shows your full total.</p>` + `<div class="seg" style="margin-bottom:12px">${[['all', 'All modes'], ['competitive', 'Competitive (this season)'], ['quickplay', 'Quick Play']].map(([k, l]) => `<button type="button" data-hmode="${k}" aria-pressed="${hmode === k}">${l}</button>`).join('')}</div>` + roleTabs()
+  return `<p class="hint">Blizzard’s profile has Quick Play from the start, but Competitive only for the current season (it resets every season). Life Hub keeps past seasons in the Seasons tab from now on; Steam shows your full total.</p>` + `<div class="seg" style="margin-bottom:12px">${[['all', 'All modes'], ['competitive', 'Competitive (this season)'], ['quickplay', 'Quick Play']].concat(Object.keys(K.get('owpasthero', {}) || {}).length ? [['seasons', 'Comp: all seasons']] : []).map(([k, l]) => `<button type="button" data-hmode="${k}" aria-pressed="${hmode === k}">${l}</button>`).join('')}</div>` + roleTabs()
     + (list.length ? `<div class="grid2"><div class="stat"><div class="k">Total time</div><div class="v num">${fullHM(total)}</div><div class="s">${role === 'all' ? 'all roles' : role}</div></div><div class="stat"><div class="k">Heroes played</div><div class="v num">${list.length}</div><div class="s">most: ${esc(heroBy(list[0][0]).name)}</div></div></div><div class="list">${list.map(heroRow).join('')}</div>`
     : `<div class="empty"><b>No heroes here yet</b>Play some games, then refresh.</div>`);
 }
 /* ---------- competitive seasons, built from your daily saved stats ---------- */
-const DIV = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master', 'grandmaster', 'champion'];
+const DIV = ['bronze', 'silver', 'gold', 'platinum', 'emerald', 'diamond', 'master', 'grandmaster', 'champion'];
 const rankScore = t => { const m = String(t || '').toLowerCase().match(/^([a-z]+) (\d)$/); return m && DIV.includes(m[1]) ? DIV.indexOf(m[1]) * 5 + (6 - +m[2]) : -1; };
 function seasonsHtml() {
   const snaps = K.get('owsnaps', []) || [], cur = (((data || {}).summary || {}).competitive || {}).pc || {};
@@ -171,20 +181,23 @@ function seasonsHtml() {
   if (cur.season && !S[cur.season]) { const x = get(cur.season); for (const r of ['open', 'tank', 'damage', 'support']) if (cur[r]) x.first[r] = x.last[r] = x.peak[r] = OW.rankText(cur[r]); }
   /* seasons you typed in yourself (from memory, a tracker site or a screenshot) fill what Life Hub didn't see */
   for (const [n, p] of Object.entries(K.get('owpast', {}) || {})) { const x = get(+n); x.manual = true;
-    if (!x.games && p.games) { x.games = +p.games || 0; x.won = +p.won || 0; x.lost = +p.lost || 0; x.tp = (+p.hours || 0) * 3600; }
+    if (!x.games && (p.games || p.won || p.hours)) { x.games = +p.games || 0; x.won = +p.won || 0; x.lost = +p.lost || 0; x.tp = (+p.hours || 0) * 3600; x.wr = p.wr; x.wonRole = p.wonRole; }
     for (const r of ['open', 'tank', 'damage', 'support']) if (p[r] && !x.last[r]) { x.last[r] = p[r]; x.peak[r] = p[r + 'Peak'] || p[r]; } }
   const list = Object.values(S).sort((a, b) => b.n - a.n);
-  const tg = list.reduce((a, x) => a + x.games, 0), th = list.reduce((a, x) => a + x.tp, 0);
+  const tg = list.reduce((a, x) => a + x.games, 0), th = list.reduce((a, x) => a + x.tp, 0), tw = list.reduce((a, x) => a + x.won, 0);
+  const wrs = list.filter(x => x.tp && (x.games || x.wr != null)), avgWr = wrs.length ? Math.round(wrs.reduce((a, x) => a + x.tp * (x.games ? x.won / x.games * 100 : x.wr), 0) / wrs.reduce((a, x) => a + x.tp, 0)) : null;
   let h = `<p class="hint">Blizzard only shows your current season, so Life Hub keeps its own history from the stats it saves every day. Older seasons: add them yourself.</p>
     <div class="row-btns" style="margin:0 2px 12px"><button class="btn sm primary" type="button" data-past="new">+ Add a past season</button><button class="btn sm" type="button" data-act="pastimport">📋 Import</button></div>`;
+  if (!tg && (tw || th)) h += `<div class="grid2"><div class="stat"><div class="k">Games won</div><div class="v num">${tw}</div><div class="s">${list.length} seasons</div></div><div class="stat"><div class="k">Competitive time</div><div class="v num">${Math.round(th / 3600)}<small> h</small></div><div class="s">${avgWr != null ? '≈ ' + avgWr + '% wins' : ''}</div></div></div>`;
   if (tg) h += `<div class="grid2"><div class="stat"><div class="k">All seasons here</div><div class="v num">${tg}<small> games</small></div><div class="s">${list.length} season${list.length > 1 ? 's' : ''}</div></div><div class="stat"><div class="k">Competitive time</div><div class="v num">${Math.round(th / 3600)}<small> h</small></div><div class="s">${Math.round(list.reduce((a, x) => a + x.won, 0) / tg * 100)}% wins</div></div></div>`;
   if (!list.length) return h + `<div class="empty"><b>No season data yet</b>Open this page now and then: every day adds to your season history.</div>`;
   return h + list.map(x => { const live = x.n === cur.season, rows = ['open', 'tank', 'damage', 'support'].filter(r => x.last[r]);
     return `<div class="card"><div class="k">Season ${x.n}${live ? ' · <span style="color:var(--ct)">now</span>' : ''}${x.manual ? ` · <button type="button" data-past="${x.n}" style="color:var(--ct);font-weight:700">✏️ edit</button>` : ''}${x.from ? ` · <span class="muted">${K.fmtDay(x.from)} – ${K.fmtDay(x.to)}</span>` : ''}</div>
-      ${x.games ? `<div class="grid2" style="margin:10px 0 6px"><div class="stat"><div class="k">Games</div><div class="v num">${x.games}</div><div class="s"><span class="wl"><span class="w">${x.won}W</span> · <span class="l">${x.lost}L</span></span></div></div><div class="stat"><div class="k">Win rate · time</div><div class="v num">${Math.round(x.won / x.games * 100)}<small>%</small></div><div class="s">${fullHM(x.tp)} played</div></div></div>` : `<p class="small muted" style="margin:6px 0">No competitive games logged yet this season.</p>`}
+      ${!x.games && (x.won || x.tp) ? `<div class="grid2" style="margin:10px 0 6px"><div class="stat"><div class="k">Games won</div><div class="v num">${x.won}</div><div class="s">${x.wonRole ? `open ${x.wonRole.open || 0} · roles ${(x.wonRole.tank || 0) + (x.wonRole.damage || 0) + (x.wonRole.support || 0)}` : ''}</div></div><div class="stat"><div class="k">Win rate · time</div><div class="v num">${x.wr != null ? '≈' + x.wr : '–'}<small>%</small></div><div class="s">${fullHM(x.tp)} played</div></div></div>` : ''}
+      ${x.games ? `<div class="grid2" style="margin:10px 0 6px"><div class="stat"><div class="k">Games</div><div class="v num">${x.games}</div><div class="s"><span class="wl"><span class="w">${x.won}W</span> · <span class="l">${x.lost}L</span></span></div></div><div class="stat"><div class="k">Win rate · time</div><div class="v num">${Math.round(x.won / x.games * 100)}<small>%</small></div><div class="s">${fullHM(x.tp)} played</div></div></div>` : x.won || x.tp ? '' : `<p class="small muted" style="margin:6px 0">No competitive games logged yet this season.</p>`}
       ${rows.length ? `<div class="list" style="margin:0">${rows.map(r => `<div class="item" style="min-height:0;padding:9px 12px"><span class="body"><span class="title">${r === 'open' ? '⭐ Open Queue' : ROLE[r]}</span><span class="meta">${x.first[r] ? `<span>start ${x.first[r]}</span>` : ''}<span>peak <b>${x.peak[r]}</b></span></span></span><span class="right">${x.last[r]}</span></div>`).join('')}</div>` : ''}</div>`; }).join('');
 }
-const rankFix = t => { const m = String(t || '').trim().toLowerCase().match(/^(bronze|silver|gold|platinum|plat|diamond|master|masters|grandmaster|gm|champion)\s*(\d)?$/); if (!m) return String(t || '').trim();
+const rankFix = t => { const m = String(t || '').trim().toLowerCase().match(/^(bronze|silver|gold|platinum|plat|emerald|diamond|master|masters|grandmaster|gm|champion)\s*(\d)?$/); if (!m) return String(t || '').trim();
   const d = { plat: 'platinum', masters: 'master', gm: 'grandmaster' }[m[1]] || m[1]; return OW.cap(d) + (m[2] ? ' ' + m[2] : ''); };
 function pastSeason(n) {
   const all = K.get('owpast', {}) || {}, p = n === 'new' ? {} : all[n] || {};
@@ -222,6 +235,17 @@ function pastImport() {
     { type: 'html', k: 'h', html: '<p class="small muted">One season per line. Seasons you already added are updated.</p>' }],
     save(v) {
       const all = K.get('owpast', {}) || {}; let n = 0;
+      const t0 = v.t.trim();
+      if (t0.startsWith('{')) {
+        let J; try { J = JSON.parse(t0); } catch { K.toast('That text got cut off. Copy all of it and try again.'); return false; }
+        const H = K.get('owpasthero', {}) || {};
+        for (const [sn, x] of Object.entries(J.seasons || {})) {
+          const o = { won: x.won || 0, hours: x.hours || 0, wr: x.wr, wonRole: x.wonRole };
+          for (const [r, [fin, high]] of Object.entries(x.ranks || {})) { o[r] = fin; o[r + 'Peak'] = high; }
+          all[sn] = o; if (x.heroes) H[sn] = x.heroes; n++;
+        }
+        K.put('owpasthero', H); K.put('owpast', all); render(); K.toast(`Imported ${n} seasons with hero stats ✓`); return;
+      }
       for (const line of v.t.split('\n')) {
         const m = line.match(/^\s*s(?:eason)?\s*(\d+)/i); if (!m) continue;
         const o = Object.assign({}, all[m[1]] || {});
