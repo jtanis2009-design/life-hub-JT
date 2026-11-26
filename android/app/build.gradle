@@ -1,0 +1,19 @@
+plugins { id 'com.android.application' }
+def build = (System.getenv('VERSION_CODE') ?: '1') as int
+android {
+    namespace 'nl.lifehub.app'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'nl.lifehub.app'
+        minSdk 26
+        targetSdk 34
+        versionCode build
+        versionName "1.0.${build}"
+    }
+    /* the signing key is made by the build and kept encrypted in the project (password: the KS_PASS secret),
+       so every update installs over the last one */
+    def pass = System.getenv('KS_PASS') ?: 'temporary'
+    signingConfigs { release { storeFile file('lifehub.keystore'); storePassword pass; keyAlias 'lifehub'; keyPassword pass } }
+    buildTypes { release { minifyEnabled false; signingConfig signingConfigs.release } }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}

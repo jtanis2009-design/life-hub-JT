@@ -341,6 +341,9 @@ nav.bottom a[aria-current="page"] { color: var(--accent); background: color-mix(
     </div>
 
     <div class="sec" id="s-remind">Reminders</div>
+    <div class="panel" id="apkCard" style="margin-bottom:10px"><div class="row"><div class="t"><b>📱 Life Hub Android app</b><small>Real alarms like the Clock app: full screen and loud, even when your phone is locked. Reminders as normal notifications.</small></div>
+      <a class="btn primary" href="https://github.com/jtanis2009-design/life-hub-JT/releases/download/android/LifeHub.apk">Download</a></div></div>
+    <script>if (window.LifeHubNative) document.getElementById('apkCard').hidden = true;</script>
     <div class="panel">
       <div class="row">
         <div class="t"><b id="nt-state">Notifications are off</b><small id="nt-sub">For to-dos, homework, tests, events, habits and countdowns.</small></div>
@@ -974,10 +977,10 @@ function setupItems() {
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   return [
     ['☁️', 'Log in to sync all your devices', 'Settings → Account (same login as Workout)', !!(auth && auth.rt), '#settings:account'],
-    ['📲', 'Install Life Hub', installEvt ? 'Tap to install it on your home screen' : 'So it opens like an app (tap for how)', !!standalone, 'install'],
+    ['📲', 'Install Life Hub', installEvt ? 'Tap to install it on your home screen' : 'So it opens like an app (tap for how)', !!standalone || !!window.LifeHubNative, 'install'],
     ['🔄', 'Cloud sync working', st.err ? st.err : 'Settings → Cloud sync', !!(auth && auth.rt && st.last && !st.err), '#settings:sync'],
-    ['🔔', 'Allow notifications', 'For reminders, homework and alarms', 'Notification' in window && Notification.permission === 'granted', 'notify'],
-    ['🌙', 'Reminders when closed', 'Settings → Reminders → when Life Hub is closed', !!(get('lh.push', null) || {}).on, '#settings:remind'],
+    ['🔔', 'Allow notifications', 'For reminders, homework and alarms', window.LifeHubNative ? LifeHubNative.notificationsOn() : 'Notification' in window && Notification.permission === 'granted', 'notify'],
+    ['🌙', 'Reminders when closed', 'Settings → Reminders → when Life Hub is closed', !!window.LifeHubNative || !!(get('lh.push', null) || {}).on, '#settings:remind'],
     ['☀️', 'Morning brief', 'Settings → Morning brief', K.briefCfg().on, '#settings:brief'],
     ['🤖', 'AI key for the assistant', 'Settings → AI assistant (free Gemini key)', !!localStorage.getItem('wl_aikey'), '#settings:ai'],
     ['🏫', 'Add your timetable', 'School → Import timetable, or + to type lessons', K.school().lessons.length > 0 || !!((K.get('schoolfeed', null) || {}).lessons || []).length || !!K.school().icsUrl, 'school/'],

@@ -65,7 +65,7 @@ function render() {
   const nx = K.nextAlarm();
   let html = K.header('Alarms', 'alarm');
   html += `<div class="card hl"><div class="k">Next alarm</div>${nx ? `<div class="big num">${K.fmtDay(K.ymd(new Date(nx.at)))} ${K.hm(new Date(nx.at))}</div><div class="muted small">in ${until(nx.at)} · ${esc(nx.a.label || 'Alarm')}${nx.a.smart ? ' · school alarm' : ''}</div>` : `<div class="big">No alarms on</div>`}
-    <div class="row-btns" style="margin-top:12px"><button class="btn primary" type="button" data-act="night">🌙 Start night mode</button>${nx ? `<button class="btn" type="button" data-sys="${nx.a.id}">⏰ Set in Clock app</button>` : ''}</div></div>`;
+    ${K.native ? '' : `<div class="row-btns" style="margin-top:12px"><button class="btn primary" type="button" data-act="night">🌙 Start night mode</button>${nx ? `<button class="btn" type="button" data-sys="${nx.a.id}">⏰ Set in Clock app</button>` : ''}</div>`}</div>`;
   if (!list.length) html += `<div class="empty"><b>No alarms yet</b>Tap + for a normal alarm, or add a smart school alarm that follows your timetable.<br><br><button class="btn primary" type="button" data-act="school">🎓 Add school alarm</button></div>`;
   else html += `<div class="list">${list.map(a => {
     const d = a.smart ? nextDayWith(a) : null, t = a.smart ? K.alarmTime(a, d) : a.time, mp = a.smart && K.morningPlan(d);
@@ -73,7 +73,10 @@ function render() {
     return `<div class="alarm ${a.on ? '' : 'off'}"><button class="body" type="button" data-edit="${a.id}"><div class="tm">${t || '--:--'}</div><span>${esc(a.label || 'Alarm')} · ${esc(how)}</span></button>
       ${(a.backups ?? 3) ? `<span class="small muted" style="flex:none;text-align:right;line-height:1.3">+${a.backups ?? 3}<br>back-up</span>` : ''}<button class="sw" type="button" role="switch" aria-checked="${!!a.on}" data-tog="${a.id}" aria-label="${a.on ? 'Turn off' : 'Turn on'} ${esc(a.label || 'alarm')}"></button></div>`;
   }).join('')}</div>`;
-  html += `<div class="card"><div class="k">How Life Hub alarms work</div><ul class="small muted" style="margin:8px 0 0;padding-left:18px;line-height:1.6">
+  if (K.native) html += `<div class="card"><div class="k">📱 Real alarms are on</div><p class="small muted" style="margin:6px 0 10px">These ring like the Clock app: full screen, loud (alarm volume), even when your phone is locked and Life Hub is closed. Back-ups included. No night mode needed.</p>
+    ${K.native.canFullScreen() ? '' : `<p class="small" style="color:var(--bad);margin:0 0 10px"><b>One switch needed:</b> allow Life Hub to show full-screen alarms, or it only shows a notification (still loud).</p><button class="btn primary sm" type="button" data-act="fullscreen" style="margin-bottom:8px">Allow full-screen alarms</button> `}
+    <button class="btn sm" type="button" data-act="nativetest">🔔 Test: ring in 10 seconds</button></div>`;
+  else html += `<div class="card"><div class="k">How Life Hub alarms work</div><ul class="small muted" style="margin:8px 0 0;padding-left:18px;line-height:1.6">
     <li><b>Night mode</b>: put your phone on the charger with Life Hub open. The screen stays on (very dim), the alarm rings loudly, and your sleep is tracked.</li>
     <li><b>Set in Clock app</b> copies the alarm into your phone’s own alarm clock, which also rings when the phone is locked. Use it as a back-up.</li>
     <li>Without either, you only get a notification, and only if Life Hub is still running in the background.</li></ul>
@@ -656,6 +659,8 @@ document.addEventListener('click', e => {
   else if (d.act === 'awake') stopNight(true);
   else if (d.act === 'snooze') { const m = +((night.ringingAlarm || {}).snooze || 9); stopRing(); night.snoozeUntil = Date.now() + m * 60000; }
   else if (d.act === 'test') testSound();
+  else if (d.act === 'nativetest') { K.native.testAlarm(); K.toast('Lock your phone: the alarm rings in 10 seconds.'); }
+  else if (d.act === 'fullscreen') K.native.openFullScreenSettings();
   else if (d.act === 'addYt') addYouTube();
   else if (d.act === 'addSp') addSpotify();
   else if (d.act === 'addSound') K.form({ title: 'Add an alarm sound', saveLabel: 'Close', fields: [{ type: 'html', k: 'x', html: `<div class="list">${[['addSp', '🟢', 'Spotify', 'Songs or playlists, played in your Spotify app (Premium)'], ['addYt', '▶️', 'YouTube', 'Paste links or a whole playlist'], ['addFile', '🎵', 'Sound file', 'An mp3 on your phone: no ads, works offline']].map(([a, i, t, m]) => `<button class="item" type="button" data-act="${a}" data-closesheet style="width:100%"><span style="font-size:22px">${i}</span><span class="body"><span class="title">${t}</span><span class="meta"><span>${m}</span></span></span></button>`).join('')}</div>` }], save: () => {} });

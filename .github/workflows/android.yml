@@ -1,0 +1,51 @@
+name: Android app
+# Builds the Life Hub Android app (real alarms) and puts it at one fixed download link:
+# https://github.com/jtanis2009-design/life-hub-JT/releases/download/android/LifeHub.apk
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency: android
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.9' }
+      - name: Signing key
+        # KS_PASS (a repository secret you choose) locks the key. First build with it: a key is made and saved
+        # encrypted in android/app. Without KS_PASS: a throw-away key (updates then need a reinstall).
+        env:
+          KS_PASS: ${{ secrets.KS_PASS }}
+        run: |
+          cd android/app
+          if [ -n "$KS_PASS" ] && [ -f lifehub.keystore.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in lifehub.keystore.enc -out lifehub.keystore -pass env:KS_PASS
+          else
+            keytool -genkeypair -keystore lifehub.keystore -alias lifehub -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "${KS_PASS:-temporary}" -keypass "${KS_PASS:-temporary}" -dname "CN=Life Hub"
+            if [ -n "$KS_PASS" ]; then
+              openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in lifehub.keystore -out lifehub.keystore.enc -pass env:KS_PASS
+              git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add lifehub.keystore.enc && git commit -m "Android: encrypted signing key" && git push
+            else echo "::warning::No KS_PASS secret: this build uses a temporary key."; fi
+          fi
+      - name: Build
+        run: gradle -p android assembleRelease --no-daemon
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          KS_PASS: ${{ secrets.KS_PASS }}
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk LifeHub.apk
+          gh release view android >/dev/null 2>&1 || gh release create android --title "Life Hub for Android" --notes "Download LifeHub.apk and open it on your phone to install or update. Life Hub with real alarms (full screen, phone locked) and notifications."
+          gh release upload android LifeHub.apk --clobber
