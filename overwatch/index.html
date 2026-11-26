@@ -113,6 +113,11 @@ function profileHtml() {
     <div class="stat"><div class="k">Win rate</div><div class="v num">${Math.round(g.winrate)}<small>%</small></div><div class="s">KDA ${g.kda}</div></div></div>
     <div class="grid2"><div class="stat"><div class="k">Time played</div><div class="v num">${hrs(g.time_played)}</div></div>
     <div class="stat"><div class="k">Per 10 min</div><div class="v num" style="font-size:16px">${g.average.eliminations} elims</div><div class="s">${g.average.deaths} deaths · ${Math.round(g.average.damage)} dmg</div></div></div>`;
+  const sm = K.get('owsteam', null), qc = data.platforms ? ['pc', 'console'].reduce((a, p) => a + ((data.platforms[p].qp || {}).tp || 0) + ((data.platforms[p].comp || {}).tp || 0), 0) : 0;
+  if (cfg().steam) h += sm && sm.min ? `<div class="grid2"><div class="stat"><div class="k">🎮 Total in game</div><div class="v num">${Math.round(sm.min / 60)}<small> h</small></div><div class="s">Steam${sm.min2w ? ` · ${Math.round(sm.min2w / 6) / 10} h last 2 weeks` : ''}</div></div>
+      <div class="stat"><div class="k">Quick Play + Comp</div><div class="v num">${Math.round(qc / 3600)}<small> h</small></div><div class="s">${sm.min * 60 > qc ? `other modes & menus ${Math.round((sm.min * 60 - qc) / 3600)} h` : 'from your career profile'}</div></div></div>${sm.error ? `<p class="small" style="color:var(--bad);margin:-4px 2px 10px">Steam: ${esc(sm.error)}</p>` : ''}`
+    : `<p class="small muted" style="margin:0 2px 12px">🎮 Steam hours: ${sm && sm.error ? `<span style="color:var(--bad)">${esc(sm.error)}</span>` : 'waiting for the background job (it checks Steam every 3 hours, once the STEAM_KEY secret is added).'}</p>`;
+  else h += `<p class="small muted" style="margin:0 2px 12px">🎮 Want your full Steam hours? Add your Steam profile in ⚙️ (top right).</p>`;
   const P = data.platforms; if (P) { const pt = x => ((x.qp || {}).tp || 0) + ((x.comp || {}).tp || 0), pc = pt(P.pc), co = pt(P.console);
     h += `<p class="small muted" style="margin:-4px 2px 12px">All modes: <b>${fullHM(pc + co)}</b>${pc && co ? ` (PC ${fullHM(pc)} · console ${fullHM(co)})` : co ? ' on console' : ' on PC'}</p>`; }
   const R = st.roles || {};
@@ -259,9 +264,10 @@ function heroSheet(key) {
 }
 function setup() {
   K.form({ title: 'Your Overwatch account', saveLabel: 'Link',
-    fields: [{ k: 'tag', label: 'BattleTag', value: cfg().tag || '', placeholder: 'Name#12345', required: true, attrs: 'autocomplete="off" spellcheck="false" autocapitalize="off"', hint: 'Exactly as in Battle.net, capitals included. Your career profile must be Public.' }],
+    fields: [{ k: 'tag', label: 'BattleTag', value: cfg().tag || '', placeholder: 'Name#12345', required: true, attrs: 'autocomplete="off" spellcheck="false" autocapitalize="off"', hint: 'Exactly as in Battle.net, capitals included. Your career profile must be Public.' },
+      { k: 'steam', label: 'Steam profile (for your total hours)', value: cfg().steam || '', placeholder: 'steamcommunity.com/id/yourname', attrs: 'autocomplete="off" spellcheck="false" autocapitalize="off"', hint: 'Steam → your profile → Share → Copy link. Game details must be Public.' }],
     save(v) { const t = v.tag.trim(); if (!/^[^#\s]{2,}#\d{3,}$/.test(t)) { K.toast('Use the full BattleTag with the number, e.g. Name#12345'); return false; }
-      const changed = t !== cfg().tag; K.put('ow', Object.assign(cfg(), { tag: t })); if (changed) { data = null; localStorage.removeItem('hub.ow.cache'); } tab = 'profile'; load(true); },
+      const changed = t !== cfg().tag; K.put('ow', Object.assign(cfg(), { tag: t, steam: (v.steam || '').trim() })); if (changed) { data = null; localStorage.removeItem('hub.ow.cache'); } tab = 'profile'; load(true); },
     del: cfg().tag ? () => { if (!confirm('Unlink your BattleTag? Your game log and weapon variants stay.')) return false; K.put('ow', {}); data = null; localStorage.removeItem('hub.ow.cache'); render(); } : null });
 }
 async function load(force) {
