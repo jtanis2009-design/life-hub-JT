@@ -176,7 +176,7 @@ function seasonsHtml() {
   const list = Object.values(S).sort((a, b) => b.n - a.n);
   const tg = list.reduce((a, x) => a + x.games, 0), th = list.reduce((a, x) => a + x.tp, 0);
   let h = `<p class="hint">Blizzard only shows your current season, so Life Hub keeps its own history from the stats it saves every day. Older seasons: add them yourself.</p>
-    <div class="row-btns" style="margin:0 2px 12px"><button class="btn sm primary" type="button" data-past="new">+ Add a past season</button></div>`;
+    <div class="row-btns" style="margin:0 2px 12px"><button class="btn sm primary" type="button" data-past="new">+ Add a past season</button><button class="btn sm" type="button" data-act="pastimport">📋 Import</button></div>`;
   if (tg) h += `<div class="grid2"><div class="stat"><div class="k">All seasons here</div><div class="v num">${tg}<small> games</small></div><div class="s">${list.length} season${list.length > 1 ? 's' : ''}</div></div><div class="stat"><div class="k">Competitive time</div><div class="v num">${Math.round(th / 3600)}<small> h</small></div><div class="s">${Math.round(list.reduce((a, x) => a + x.won, 0) / tg * 100)}% wins</div></div></div>`;
   if (!list.length) return h + `<div class="empty"><b>No season data yet</b>Open this page now and then: every day adds to your season history.</div>`;
   return h + list.map(x => { const live = x.n === cur.season, rows = ['open', 'tank', 'damage', 'support'].filter(r => x.last[r]);
@@ -213,6 +213,29 @@ function pastSeason(n) {
       } catch { K.toast('Couldn’t read that screenshot.'); } };
     i.click();
   };
+}
+/* 📋 paste seasons in one go (e.g. a block Claude made from your screenshots):
+   one season per line: S14 | games 260 | won 140 | lost 118 | hours 120 | open Gold 2 (peak Platinum 5) | support Diamond 3 */
+function pastImport() {
+  K.form({ title: 'Import past seasons', saveLabel: 'Import', fields: [{ k: 't', label: 'Paste here', type: 'textarea', attrs: 'rows="8" spellcheck="false"', required: true,
+    placeholder: 'S14 | games 260 | won 140 | lost 118 | hours 120 | open Gold 2 (peak Platinum 5) | support Diamond 3' },
+    { type: 'html', k: 'h', html: '<p class="small muted">One season per line. Seasons you already added are updated.</p>' }],
+    save(v) {
+      const all = K.get('owpast', {}) || {}; let n = 0;
+      for (const line of v.t.split('\n')) {
+        const m = line.match(/^\s*s(?:eason)?\s*(\d+)/i); if (!m) continue;
+        const o = Object.assign({}, all[m[1]] || {});
+        for (const part of line.split('|').slice(1)) {
+          const p = part.trim(), num = p.match(/^(games|won|wins|lost|losses|hours)\s+([\d.]+)/i);
+          if (num) { o[{ wins: 'won', losses: 'lost' }[num[1].toLowerCase()] || num[1].toLowerCase()] = +num[2]; continue; }
+          const rk = p.match(/^(open|tank|damage|support)\s+([a-z]+(?:\s*\d)?)(?:\s*\(\s*peak\s+([a-z]+(?:\s*\d)?)\s*\))?/i);
+          if (rk) { const r = rk[1].toLowerCase(); o[r] = rankFix(rk[2]); if (rk[3]) o[r + 'Peak'] = rankFix(rk[3]); }
+        }
+        all[m[1]] = o; n++;
+      }
+      if (!n) { K.toast('No seasons found. Lines start with S and the season number, e.g. S14 | …'); return false; }
+      K.put('owpast', all); render(); K.toast(`Imported ${n} season${n > 1 ? 's' : ''} ✓`);
+    } });
 }
 function roleTabs() { return `<div class="tabs">${[['all', 'All'], ['tank', 'Tank'], ['damage', 'Damage'], ['support', 'Support']].map(([k, l]) => `<button type="button" data-role="${k}" aria-pressed="${role === k}">${l}</button>`).join('')}</div>`; }
 /* game log: what changed between the daily snapshots */
@@ -321,6 +344,7 @@ document.addEventListener('click', e => {
   if (d.tab) { tab = d.tab; K.put('ow.tab', tab); role = 'all'; q = ''; render(); window.scrollTo(0, 0); }
   else if (d.mode) { mode = d.mode; K.put('ow.mode', mode); render(); }
   else if (d.past) pastSeason(d.past);
+  else if (d.act === 'pastimport') pastImport();
   else if (d.hmode) { hmode = d.hmode; K.put('ow.hmode', hmode); render(); }
   else if (d.role) { role = d.role; render(); }
   else if (d.hero) heroSheet(d.hero);
