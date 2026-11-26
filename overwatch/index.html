@@ -99,7 +99,7 @@ function privateHtml() {
     <button class="btn" type="button" data-act="refresh">Check again</button></div>`;
 }
 function stats() { return mode === 'competitive' ? data.comp : data.qp; }
-function modeTabs() { return `<div class="seg" style="margin-bottom:12px">${[['competitive', 'Competitive'], ['quickplay', 'Quick Play']].map(([k, l]) => `<button type="button" data-mode="${k}" aria-pressed="${mode === k}">${l}</button>`).join('')}</div>`; }
+function modeTabs() { return `<div class="seg" style="margin-bottom:12px">${[['competitive', 'Competitive (this season)'], ['quickplay', 'Quick Play']].map(([k, l]) => `<button type="button" data-mode="${k}" aria-pressed="${mode === k}">${l}</button>`).join('')}</div>`; }
 function profileHtml() {
   const s = data.summary || {}, comp = (s.competitive || {}), plat = comp.pc ? 'pc' : comp.console ? 'console' : null, c = plat ? comp[plat] : null;
   let h = `<div class="prof" style="${s.namecard ? `background-image:url('${esc(s.namecard)}')` : ''}">${s.avatar ? `<img onerror="this.style.visibility='hidden'" src="${esc(s.avatar)}" alt="">` : ''}<div><b>${esc(s.username || cfg().tag)}</b><span class="small muted">${esc(s.title || '')}${s.endorsement ? ` · Endorsement ${s.endorsement.level}` : ''}</span></div></div>`;
@@ -142,13 +142,13 @@ function heroStats() {
 }
 function heroRow([k, x], i, arr) {
   const hb = heroBy(k), max = arr && arr[0] ? arr[0][1].time_played : x.time_played;
-  const split = x.qp != null && x.comp != null ? `<span class="m" style="display:block">Quick Play ${fullHM(x.qp)} · Competitive ${fullHM(x.comp)}</span>` : '';
+  const split = x.qp != null && x.comp != null ? `<span class="m" style="display:block">Quick Play ${fullHM(x.qp)} · Competitive this season ${fullHM(x.comp)}</span>` : '';
   return `<div class="hero">${hb.portrait ? `<img onerror="this.style.visibility='hidden'" src="${esc(hb.portrait)}" alt="" loading="lazy">` : '<span class="ph"></span>'}<span class="body"><b>${esc(hb.name)} <span style="float:right;font-variant-numeric:tabular-nums">${fullHM(x.time_played)}</span></b><span class="m">${K.plural(x.games_played, 'game')} · ${Math.round(x.winrate)}% wins · KDA ${x.kda}</span>${split}<span class="progress"><i style="width:${Math.max(3, x.time_played / max * 100)}%"></i></span></span></div>`;
 }
 function heroesHtml() {
   const list = heroStats().filter(([k]) => role === 'all' || heroBy(k).role === role).filter(([, x]) => x.time_played > 0).sort((a, b) => b[1].time_played - a[1].time_played);
   const total = list.reduce((a, [, x]) => a + x.time_played, 0);
-  return `<div class="seg" style="margin-bottom:12px">${[['all', 'All modes'], ['competitive', 'Competitive'], ['quickplay', 'Quick Play']].map(([k, l]) => `<button type="button" data-hmode="${k}" aria-pressed="${hmode === k}">${l}</button>`).join('')}</div>` + roleTabs()
+  return `<p class="hint">Blizzard’s profile has Quick Play from the start, but Competitive only for the current season (it resets every season). Life Hub keeps past seasons in the Seasons tab from now on; Steam shows your full total.</p>` + `<div class="seg" style="margin-bottom:12px">${[['all', 'All modes'], ['competitive', 'Competitive (this season)'], ['quickplay', 'Quick Play']].map(([k, l]) => `<button type="button" data-hmode="${k}" aria-pressed="${hmode === k}">${l}</button>`).join('')}</div>` + roleTabs()
     + (list.length ? `<div class="grid2"><div class="stat"><div class="k">Total time</div><div class="v num">${fullHM(total)}</div><div class="s">${role === 'all' ? 'all roles' : role}</div></div><div class="stat"><div class="k">Heroes played</div><div class="v num">${list.length}</div><div class="s">most: ${esc(heroBy(list[0][0]).name)}</div></div></div><div class="list">${list.map(heroRow).join('')}</div>`
     : `<div class="empty"><b>No heroes here yet</b>Play some games, then refresh.</div>`);
 }
