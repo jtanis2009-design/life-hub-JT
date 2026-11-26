@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>News · Life Hub</title>
+<meta name="theme-color" content="#0d0f14">
+<link rel="manifest" href="../manifest.webmanifest">
+<link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+<script src="../hub.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../lib/kit.css">
+<style>
+  .nw { display: block; padding: 12px 14px; border-top: 1px solid var(--line); text-decoration: none; color: var(--ink); }
+  .nw:first-child { border-top: 0; }
+  .nw b { display: block; font-weight: 650; line-height: 1.35; }
+  .nw span { font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body style="--c:#56ccf2">
+<div class="wrap" id="app"></div>
+<script src="../lib/kit.js"></script>
+<script src="../lib/agenda.js"></script>
+<script>
+const { esc } = K;
+const cfg = () => Object.assign({ topics: ['Overwatch', 'anime', 'gaming'], nos: true, lang: 'en' }, K.get('newscfg', {}) || {});
+let topic = 'all';
+const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 60 ? `${Math.max(1, m)} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+function render() {
+  const N = K.get('news', null), c = cfg();
+  let h = K.header('News', 'news', `<button class="iconbtn" type="button" data-act="interests" aria-label="Your interests">${K.svg('gear')}</button>`);
+  if (!N || !N.groups) { h += `<div class="empty"><b>Your news is on its way</b>The background job collects headlines every 2 hours for: ${esc([c.nos ? 'Netherlands (NOS)' : '', ...c.topics].filter(Boolean).join(', '))}.<br><br><button class="btn primary" type="button" data-act="interests">Choose your interests</button></div>`; K.$('#app').innerHTML = h; return; }
+  const sigNow = JSON.stringify([c.topics, c.nos, c.lang]);
+  h += `<div class="tabs">${[['all', 'All']].concat(N.groups.map(g => [g.topic, g.topic])).map(([k, l]) => `<button type="button" data-topic="${esc(k)}" aria-pressed="${topic === k}">${esc(l)}</button>`).join('')}</div>`;
+  for (const g of N.groups.filter(g => topic === 'all' || g.topic === topic)) {
+    h += `<div class="sec">${esc(g.topic)}</div>`;
+    h += g.items.length ? `<div class="list">${g.items.slice(0, topic === 'all' ? 4 : 20).map(x => `<a class="nw" href="${esc(x.url)}" target="_blank" rel="noopener"><b>${esc(x.title)}</b><span>${esc(x.source || '')}${x.at ? ' · ' + ago(x.at) : ''}</span></a>`).join('')}</div>`
+      : `<p class="hint">${g.error ? 'Couldn’t load this one right now.' : 'Nothing new in the last days.'}</p>`;
+  }
+  h += `<p class="hint" style="margin-top:14px">Updated ${ago(N.at)}. New headlines every 2 hours${N.sig !== sigNow ? ' (your new interests come with the next update)' : ''}. Headlines from Google News and NOS.</p>`;
+  K.$('#app').innerHTML = h;
+}
+function interests() {
+  const c = cfg();
+  K.form({ title: 'Your news', fields: [
+    { k: 'topics', label: 'Topics (one per line, up to 8)', type: 'textarea', value: c.topics.join('\n'), attrs: 'rows="6"', hint: 'Anything: a game, an anime, a band, your club, your town, a hobby…' },
+    { k: 'nos', label: 'Top news from the Netherlands (NOS)', type: 'checkbox', value: c.nos },
+    { k: 'lang', label: 'Topic news in', type: 'seg', value: c.lang, options: [['en', 'English'], ['nl', 'Nederlands']] }],
+    save(v) { const topics = [...new Set(v.topics.split('\n').map(x => x.trim()).filter(Boolean))].slice(0, 8); K.put('newscfg', { topics, nos: v.nos, lang: v.lang || 'en' }); render(); K.toast('Saved. Your news updates with the next round (within 2 hours).'); } });
+}
+document.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.topic) { topic = b.dataset.topic; render(); } else if (b.dataset.act === 'interests') interests(); });
+render();
+</script>
+</body>
+</html>
