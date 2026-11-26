@@ -3451,6 +3451,7 @@ function blobB64(b){
    not on the free tier and fail on every call, so pick from this list and fall back down it. */
 var GEM_PREF=['gemini-flash-latest','gemini-2.5-flash','gemini-flash-lite-latest','gemini-2.5-flash-lite','gemini-2.0-flash','gemini-2.0-flash-lite'];
 var GEM_AVOID=/embedding|image|tts|audio|live|vision|omni|computer|robotics|pro|preview|exp|thinking|aqa|learnlm|nano|veo|lyria|imagen/;
+try{ if(!localStorage.getItem('wl_aipref2')){ localStorage.removeItem('wl_aimodel'); localStorage.setItem('wl_aipref2','1'); } }catch(e){}
 function gemDead(){ try{ return JSON.parse(localStorage.getItem('wl_aidead')||'[]'); }catch(e){ return []; } }
 function gemMarkDead(m){ try{ var d=gemDead(); if(d.indexOf(m)<0){ d.push(m); localStorage.setItem('wl_aidead',JSON.stringify(d)); } }catch(e){} }
 function geminiCandidates(){
@@ -3464,7 +3465,7 @@ function geminiCandidates(){
       /* newest flash models first: Google retires old ones for new users. Skip ones that said they're retired. */
       var dead=gemDead(), ver=function(n){ var m=n.match(/gemini-(\d+(?:\.\d+)?)/); return m?parseFloat(m[1]):0; };
       var out=all.filter(function(n){ return /^gemini-/.test(n)&&!GEM_AVOID.test(n)&&/flash/.test(n)&&dead.indexOf(n)<0; })
-        .sort(function(x,y){ return (ver(y)-ver(x))||((/lite/.test(x)?1:0)-(/lite/.test(y)?1:0)); });
+        .sort(function(x,y){ return (ver(y)-ver(x))||((/lite/.test(y)?1:0)-(/lite/.test(x)?1:0)); });   /* same generation: the faster lite one first */
       if(!out.length) out=GEM_PREF.filter(function(n){ return dead.indexOf(n)<0; }).slice(0,2);   /* list came back odd: try the usual names anyway */
       return out;
     });
@@ -3486,18 +3487,25 @@ function geminiCall(msgs,opts){
   if(!aiKey()) return Promise.reject(Object.assign(new Error('No Gemini key'),{status:0,nokey:true}));
   if(typeof msgs==='string') msgs=[{role:'user',content:msgs}];
   var tried=[];
-  var once=function(model,b64){
+  /* models that refuse the “answer without thinking” setting (shared with the assistant) */
+  var noThink=function(m){ try{ return JSON.parse(localStorage.getItem('wl_ainothink')||'[]').indexOf(m)>=0; }catch(e){ return false; } };
+  var setNoThink=function(m){ try{ var l=JSON.parse(localStorage.getItem('wl_ainothink')||'[]'); if(l.indexOf(m)<0){ l.push(m); localStorage.setItem('wl_ainothink',JSON.stringify(l)); } }catch(e){} };
+  var slow=0;
+  var once=function(model,b64,retried){
     var contents=msgs.map(function(m){ return {role:m.role==='assistant'?'model':'user',parts:m.parts||[{text:String(m.content)}]}; });
     b64.forEach(function(d,i){ var ty=String(((opts.images||[])[i]||{}).type||'');
       contents[contents.length-1].parts.push({inline_data:{mime_type:/^image\/(png|jpeg|webp|heic|heif)$/.test(ty)?ty:'image/jpeg',data:d}}); });
-    var ctl=typeof AbortController!=='undefined'?new AbortController():null, tm=setTimeout(function(){ if(ctl) ctl.abort(); },90000);
-    var body={contents:contents}; if(opts.json) body.generationConfig={responseMimeType:'application/json'};
+    var ctl=typeof AbortController!=='undefined'?new AbortController():null, tm=setTimeout(function(){ if(ctl) ctl.abort(); },35000);
+    var body={contents:contents}; body.generationConfig=opts.json?{responseMimeType:'application/json'}:{};
+    if(!noThink(model)) body.generationConfig.thinkingConfig={thinkingBudget:0};   /* answer straight away: much faster */
     if(nlOn()) body.systemInstruction={parts:[{text:NL_AI}]};
     if(opts.tools&&opts.tools.length){ body.tools=[{functionDeclarations:opts.tools}]; body.toolConfig={functionCallingConfig:{mode:'AUTO'}}; }
     return gemFetch(GEM+'models/'+encodeURIComponent(model)+':generateContent',{method:'POST',signal:ctl?ctl.signal:undefined,
         headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
       .then(function(r){ clearTimeout(tm); return r.json().catch(function(){ return {}; }).then(function(j){
-        if(!r.ok) throw gemErrInfo(r,j);
+        if(!r.ok){ var em=(j&&j.error&&j.error.message)||'';
+          if(r.status===400&&!/api key|API_KEY/i.test(em)&&!noThink(model)){ setNoThink(model); return once(model,b64,retried); }   /* refused the no-thinking setting: ask again without it */
+          throw gemErrInfo(r,j); }
         var cand=(j.candidates||[])[0]||{}, c=cand.content;
         var t=((c&&c.parts)||[]).filter(function(p){ return !p.thought; }).map(function(p){ return p.text||''; }).join('');
         var calls=((c&&c.parts)||[]).filter(function(p){ return p.functionCall; }).map(function(p){ return {name:p.functionCall.name,args:p.functionCall.args||{}}; });
@@ -3506,7 +3514,10 @@ function geminiCall(msgs,opts){
           e.status=0; e.empty=true; throw e; }
         try{ localStorage.setItem('wl_aimodel',model); }catch(x){}
         return {text:t,calls:calls,raw:c,model:model};
-      }); },function(e){ clearTimeout(tm); var x=new Error(e&&e.name==='AbortError'?'Gemini took too long to answer':'Could not reach Gemini (no connection?)'); x.status=0; x.net=true; throw x; });
+      }); },function(e){ clearTimeout(tm);
+        if(e&&e.name==='AbortError'){ var s2=new Error('Gemini took too long to answer'); s2.status=0; s2.slow=true; throw s2; }
+        if(!retried) return new Promise(function(res){ setTimeout(res,1500); }).then(function(){ return once(model,b64,true); });   /* a hiccup on mobile data: try once more */
+        var x=new Error('Could not reach Gemini (no connection?)'); x.status=0; x.net=true; throw x; });
   };
   return Promise.all((opts.images||[]).map(blobB64)).then(function(b64){
     return geminiModel().then(function(first){
@@ -3523,6 +3534,7 @@ function geminiCall(msgs,opts){
         return once(m,b64).catch(function(e){
           var auth=e.status===401||e.status===403&&!/model/i.test(e.message)||(e.status===400&&/api key|API_KEY/i.test(e.message));
           if(auth||e.net) throw e;                          /* a bad key or no signal will not get better on another model */
+          if(e.slow&&++slow>=3) throw e;                    /* slow: try another model, up to 3 */
           if(e.status===404||/no longer available|not found|deprecated|retired|is not supported|not available to new/i.test(e.message)) gemMarkDead(m);
           try{ if(localStorage.getItem('wl_aimodel')===m) localStorage.removeItem('wl_aimodel'); }catch(x){}
           if(tried.length>=5) throw e;
