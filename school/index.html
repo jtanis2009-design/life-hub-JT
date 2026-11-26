@@ -35,7 +35,7 @@
 <script src="../lib/ai.js"></script>
 <script>
 const { esc, svg } = K;
-const TABS = [['week', 'Timetable'], ['homework', 'Homework'], ['grades', 'Grades'], ['settings', 'Setup']];
+const TABS = [['week', 'Timetable'], ['homework', 'Homework'], ['grades', 'Grades'], ['attend', 'Attendance'], ['settings', 'Setup']];
 let tab = TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : 'week';
 let day = (() => { const d = new Date().getDay(); return d === 0 || d === 6 ? 1 : d; })();
 let showDone = false;
@@ -57,10 +57,83 @@ function nextLessonDate(subject) {
 
 function render() {
   let html = K.header('School', 'school') + `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}${k === 'homework' ? `<span class="n">${K.homework.all().filter(h => !h.done).length || ''}</span>` : ''}</button>`).join('')}</div>`;
-  html += ({ week: weekHtml, homework: hwHtml, grades: gradesHtml, settings: setupHtml })[tab]();
+  html += ({ week: weekHtml, homework: hwHtml, grades: gradesHtml, attend: attendHtml, settings: setupHtml })[tab]();
   K.$('#app').innerHTML = html;
-  K.$('#fab').hidden = tab === 'settings';
+  K.$('#fab').hidden = tab === 'settings' || tab === 'attend';
   K.$('#fab').setAttribute('aria-label', { week: 'Add lesson', homework: 'Add homework or test', grades: 'Add grade' }[tab] || 'Add');
+}
+
+/* ---------- attendance (like Osiris “Aan- en afwezigheid”) ----------
+   Start: your Osiris totals on a date (typed in, or read from a screenshot). After that, every lesson in your
+   timetable that has ended counts as present, unless you marked it excused (geoorloofd) or unexcused (ongeoorloofd). */
+const ATT = () => Object.assign({ base: null, marks: {} }, K.get('attend', {}) || {});
+const lk = (d, l) => `${d}|${l.start}|${l.subject}`;
+const ATC = { present: '#5fb33a', excused: '#d0651d', unexcused: '#e0247a' }, ATN = { present: 'Present', excused: 'Excused absent', unexcused: 'Unexcused absent' };
+const fmtHM = m => `${Math.floor(m / 60)}h ${K.pad(Math.round(m % 60))}m`;
+const mins = (a, b) => { const [h1, m1] = a.split(':').map(Number), [h2, m2] = b.split(':').map(Number); return Math.max(0, h2 * 60 + m2 - h1 * 60 - m1); };
+function attTotals() {
+  const A = ATT(), b = A.base, t = { present: b ? b.present : 0, excused: b ? b.excused : 0, unexcused: b ? b.unexcused : 0 }, now = K.hm(new Date()), today = K.ymd();
+  let d = b ? K.addDays(b.date, 1) : (A.started || today); const past = [];
+  for (let i = 0; d <= today && i < 400; i++, d = K.addDays(d, 1)) for (const l of K.lessonsOn(d)) {
+    if (d === today && l.end > now) continue;                       /* not over yet */
+    const m = mins(l.start, l.end), k = A.marks[lk(d, l)] || 'present'; t[k] += m; past.push({ d, l, k });
+  }
+  return { t, past, from: b ? b.from : (A.started || today) };
+}
+function pie(t) {
+  const tot = t.present + t.excused + t.unexcused; if (!tot) return '';
+  let a = -Math.PI / 2, out = '';
+  for (const k of ['present', 'excused', 'unexcused']) { const v = t[k] / tot; if (!v) continue;
+    const a2 = a + v * 2 * Math.PI, large = v > .5 ? 1 : 0, p = (r, x) => [100 + r * Math.cos(x), 100 + r * Math.sin(x)];
+    const [x1, y1] = p(90, a), [x2, y2] = p(90, a2), [lx, ly] = p(58, (a + a2) / 2);
+    out += v > .999 ? `<circle cx="100" cy="100" r="90" fill="${ATC[k]}"/>` : `<path d="M100 100 L${x1} ${y1} A90 90 0 ${large} 1 ${x2} ${y2} Z" fill="${ATC[k]}" stroke="var(--bg)" stroke-width="2"/>`;
+    if (v >= .04) out += `<text x="${lx}" y="${ly}" text-anchor="middle" dominant-baseline="middle" fill="#fff" font-size="13" font-weight="700">${Math.round(v * 100)}%</text>`;
+    a = a2; }
+  return `<svg viewBox="0 0 200 200" width="220" height="220" role="img" aria-label="Attendance chart" style="display:block;margin:4px auto 10px">${out}</svg>`;
+}
+function attendHtml() {
+  const A = ATT(), { t, past, from } = attTotals(), tot = t.present + t.excused + t.unexcused;
+  let h = `<div class="card"><div class="k">Attendance since ${K.fmtDate ? K.fmtDate(from) : from}</div>`;
+  if (!A.base && !tot) h += `<p class="small muted" style="margin:6px 0 10px">Start with your numbers from Osiris (Aan- en afwezigheid → Overzicht). From then on Life Hub counts every lesson from your timetable as present, unless you mark it absent here.</p>`;
+  else h += pie(t) + `<div class="list" style="margin:0">${['present', 'excused', 'unexcused'].map(k => `<div class="item" style="min-height:0;padding:9px 12px"><span style="width:14px;height:14px;border-radius:4px;background:${ATC[k]};flex:none"></span><span class="body"><span class="title">${ATN[k]}</span></span><span class="right">${fmtHM(t[k])} <span class="muted small">${tot ? Math.round(t[k] / tot * 100) : 0}%</span></span></div>`).join('')}</div>`;
+  h += `<div class="row-btns" style="margin-top:12px"><button class="btn sm primary" type="button" data-act="att-shot">📸 Read from Osiris screenshot</button><button class="btn sm" type="button" data-act="att-type">⌨️ Type the numbers</button></div>`;
+  if (A.base) h += `<p class="hint" style="margin:8px 0 0">Osiris numbers from ${K.fmtDay(A.base.date)}, plus your timetable since. Update them now and then so they stay the same as Osiris.</p>`;
+  h += `</div>`;
+  const tl = K.lessonsOn(K.ymd()).filter(l => l.end > K.hm(new Date()));
+  const marked = tl.length && tl.every(l => A.marks[lk(K.ymd(), l)]);
+  if (marked) h += `<div class="sec">Today</div><div class="row-btns" style="margin:0 2px 8px"><span class="small" style="align-self:center">Marked as <b>${ATN[A.marks[lk(K.ymd(), tl[0])]].toLowerCase()}</b> for ${tl.length} lesson${tl.length > 1 ? 's' : ''}.</span><button class="btn sm" type="button" data-absent="present">Undo</button></div>`;
+  else if (tl.length) h += `<div class="sec">Not going today?</div><div class="row-btns" style="margin:0 2px 8px"><button class="btn sm" type="button" data-absent="excused">🤒 Absent, excused (${tl.length} lesson${tl.length > 1 ? 's' : ''})</button><button class="btn sm" type="button" data-absent="unexcused">Absent, unexcused</button></div>`;
+  const recent = past.slice(-40).reverse();
+  if (recent.length) h += `<div class="sec">Lessons so far · tap to change</div><div class="list">${recent.map(({ d, l, k }) => `<button class="item" type="button" data-att="${esc(lk(d, l))}" style="width:100%"><span class="bar" style="--dot:${ATC[k]}"></span><span class="body"><span class="title">${esc(l.subject)}</span><span class="meta"><span>${K.fmtDay(d)} ${l.start}–${l.end}</span></span></span><span class="right small" style="color:${ATC[k]}">${ATN[k]}</span></button>`).join('')}</div>`;
+  return h;
+}
+function attSetBase(v) {
+  const A = ATT(); A.base = { date: K.ymd(), from: v.from || A.base?.from || (new Date().getMonth() >= 7 ? new Date().getFullYear() : new Date().getFullYear() - 1) + '-08-01', present: v.present, excused: v.excused, unexcused: v.unexcused };
+  for (const k in A.marks) if (k.slice(0, 10) <= A.base.date) delete A.marks[k];     /* those are inside the Osiris numbers now */
+  K.put('attend', A); render(); K.toast('Attendance updated from Osiris ✓');
+}
+const parseHM = x => { x = String(x || '').trim().toLowerCase(); const m = x.match(/(\d+)\s*[u:h]\s*(\d+)?/); return m ? +m[1] * 60 + +(m[2] || 0) : (+x || 0) * 60; };
+function attType() {
+  const b = ATT().base || {};
+  K.form({ title: 'Your Osiris numbers', fields: [
+    { type: 'html', k: 'h', html: '<p class="small muted" style="margin-top:-6px">From Osiris → Aan- en afwezigheid → Overzicht. Type hours like <b>213u15</b> or <b>213:15</b>.</p>' },
+    { k: 'present', label: 'Aanwezig (present)', value: b.present != null ? fmtHM(b.present).replace('h ', ':').replace('m', '') : '', required: true },
+    { k: 'excused', label: 'Geoorloofd afwezig (excused)', value: b.excused != null ? fmtHM(b.excused).replace('h ', ':').replace('m', '') : '', half: true },
+    { k: 'unexcused', label: 'Ongeoorloofd afwezig (unexcused)', value: b.unexcused != null ? fmtHM(b.unexcused).replace('h ', ':').replace('m', '') : '', half: true },
+    { k: 'from', label: 'Periode vanaf (start date)', type: 'date', value: b.from || (new Date().getMonth() >= 7 ? new Date().getFullYear() : new Date().getFullYear() - 1) + '-08-01' }],
+    save(v) { attSetBase({ present: parseHM(v.present), excused: parseHM(v.excused), unexcused: parseHM(v.unexcused), from: v.from }); } });
+}
+function attShot() {
+  if (!K.aiReady || !K.aiReady()) { K.toast('Reading a screenshot needs the AI key (Settings → AI assistant). Type the numbers instead.'); return attType(); }
+  const i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*';
+  i.onchange = async () => { const f = i.files[0]; if (!f) return; K.toast('Reading your Osiris screenshot…');
+    try { const raw = await K.ai('This is a screenshot of the Dutch school system Osiris, page "Aan- en afwezigheid", Overzicht. Read the totals. Reply as JSON: {"present":"213u 15m","excused":"18u 45m","unexcused":"3u 0m","from":"YYYY-MM-DD"} where present = Aanwezig, excused = Geoorloofd afwezig, unexcused = Ongeoorloofd afwezig, from = Periode vanaf. Use "0u 0m" for a missing one.', { json: true, images: [f] });
+      const j = JSON.parse(String(raw).replace(/^```json|```$/g, '').trim());
+      const v = { present: parseHM(j.present), excused: parseHM(j.excused), unexcused: parseHM(j.unexcused), from: /^\d{4}-\d\d-\d\d$/.test(j.from || '') ? j.from : '' };
+      if (!v.present && !v.excused) throw new Error('nothing found');
+      if (confirm(`Found: present ${fmtHM(v.present)}, excused ${fmtHM(v.excused)}, unexcused ${fmtHM(v.unexcused)}. Use these?`)) attSetBase(v);
+    } catch { K.toast('Couldn’t read that screenshot. Type the numbers instead.'); attType(); } };
+  i.click();
 }
 
 /* ---------- timetable ---------- */
@@ -439,6 +512,10 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   const d = b.dataset;
   if (d.tab) { tab = d.tab; history.replaceState(null, '', '#' + tab); render(); }
+  else if (d.act === 'att-shot') attShot();
+  else if (d.act === 'att-type') attType();
+  else if (d.att) { const A = ATT(), cur = A.marks[d.att] || 'present', nx = { present: 'excused', excused: 'unexcused', unexcused: 'present' }[cur]; if (nx === 'present') delete A.marks[d.att]; else A.marks[d.att] = nx; K.put('attend', A); render(); }
+  else if (d.absent) { const A = ATT(), t = K.ymd(); if (!A.base && !A.started) A.started = t; for (const l of K.lessonsOn(t).filter(l => l.end > K.hm(new Date()))) { if (d.absent === 'present') delete A.marks[lk(t, l)]; else A.marks[lk(t, l)] = d.absent; } K.put('attend', A); render(); K.toast(d.absent === 'excused' ? 'Marked as excused absent today. Get well soon 🤒' : d.absent === 'present' ? 'Undone' : 'Marked as unexcused absent today'); }
   else if (d.day) { day = +d.day; render(); }
   else if (d.date) { selDate = d.date; render(); }
   else if (d.week) { week += +d.week; selDate = ''; render(); }
