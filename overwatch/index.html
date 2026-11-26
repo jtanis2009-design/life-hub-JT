@@ -21,6 +21,20 @@
   .rank img { width: 46px; height: 46px; object-fit: contain; display: block; margin: 2px auto; }
   .rank .k { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .rank .v { font-weight: 800; font-size: 14px; }
+  .rank.openq { display: flex; align-items: center; gap: 16px; padding: 14px 18px; margin-bottom: 8px; border-color: color-mix(in srgb, var(--c) 55%, var(--line)); background: color-mix(in srgb, var(--c) 10%, var(--surface)); }
+  .rank.openq img { width: 72px; height: 72px; margin: 0; }
+  .wgrid { display: grid; grid-template-columns: 40px 1fr repeat(var(--n), 38px); align-items: center; gap: 6px 6px; padding: 8px 12px; border-top: 1px solid var(--line); }
+  .wgrid:first-child { border-top: 0; }
+  .wgrid.head { position: sticky; top: 0; background: var(--surface); z-index: 2; font-size: 9.5px; line-height: 1.15; font-weight: 800; color: var(--muted); text-align: center; padding-top: 10px; padding-bottom: 10px; }
+  .wgrid.head span { overflow-wrap: anywhere; }
+  .wgrid img { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; background: var(--surface-2); }
+  .wgrid .nm { font-weight: 700; font-size: 14.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+  .wgrid .nm small { display: block; font-weight: 600; font-size: 11.5px; color: var(--muted); }
+  .cell { width: 38px; height: 38px; border-radius: 11px; border: 2px solid var(--line); background: transparent; font-weight: 900; font-size: 17px; color: transparent; }
+  .cell.own { background: var(--vc); border-color: var(--vc); color: #0d0f14; }
+  .cell.na { border-style: dashed; opacity: .35; color: var(--muted); font-size: 14px; }
+  .vchips { display: flex; gap: 6px; flex-wrap: wrap; margin: -2px 0 12px; }
+  .vchip { font-size: 12.5px; font-weight: 700; padding: 5px 10px; border-radius: 99px; background: color-mix(in srgb, var(--vc) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--vc) 45%, transparent); }
   .hero { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); width: 100%; text-align: left; }
   .hero:first-child { border-top: 0; }
   .hero img, .hero .ph { width: 44px; height: 44px; border-radius: 12px; background: var(--surface-2); flex: none; object-fit: cover; }
@@ -62,7 +76,7 @@ const ROLE = { tank: '🛡️ Tank', damage: '⚔️ Damage', support: '➕ Supp
 
 function render() {
   let html = K.header('Overwatch', 'ow', cfg().tag ? `<button class="iconbtn" type="button" data-act="setup" aria-label="Overwatch settings">${K.svg('gear')}</button>` : '');
-  html += `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}${k === 'weapons' && WV.all().filter(v => v.owned).length ? `<span class="n">${WV.all().filter(v => v.owned).length}</span>` : ''}</button>`).join('')}</div>`;
+  html += `<div class="tabs">${TABS.map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${tab === k}">${l}${k === 'weapons' && heroes.length && counts().own ? `<span class="n">${counts().own}</span>` : ''}</button>`).join('')}</div>`;
   if (tab === 'weapons') html += weaponsHtml();
   else if (!cfg().tag) html += setupHtml();
   else {
@@ -89,7 +103,9 @@ function modeTabs() { return `<div class="seg" style="margin-bottom:12px">${[['c
 function profileHtml() {
   const s = data.summary || {}, comp = (s.competitive || {}), plat = comp.pc ? 'pc' : comp.console ? 'console' : null, c = plat ? comp[plat] : null;
   let h = `<div class="prof" style="${s.namecard ? `background-image:url('${esc(s.namecard)}')` : ''}">${s.avatar ? `<img onerror="this.style.visibility='hidden'" src="${esc(s.avatar)}" alt="">` : ''}<div><b>${esc(s.username || cfg().tag)}</b><span class="small muted">${esc(s.title || '')}${s.endorsement ? ` · Endorsement ${s.endorsement.level}` : ''}</span></div></div>`;
-  if (c) h += `<div class="sec">Competitive rank${c.season ? ` · season ${c.season}` : ''}${comp.pc && comp.console ? ` · ${plat.toUpperCase()}` : ''}</div><div class="ranks">${['tank', 'damage', 'support'].map(r => `<div class="rank"><div class="k">${r}</div>${c[r] ? `<img onerror="this.style.visibility='hidden'" src="${esc(c[r].rank_icon)}" alt=""><div class="v">${OW.rankText(c[r])}</div>` : `<div class="v muted" style="margin:16px 0">Unranked</div>`}</div>`).join('')}</div>`;
+  if (c) h += `<div class="sec">Competitive rank${c.season ? ` · season ${c.season}` : ''}${comp.pc && comp.console ? ` · ${plat.toUpperCase()}` : ''}</div>
+    <div class="rank openq"><div>${c.open ? `<img onerror="this.style.visibility='hidden'" src="${esc(c.open.rank_icon)}" alt="">` : ''}</div><div style="text-align:left"><div class="k">Open Queue</div><div class="v" style="font-size:24px">${c.open ? OW.rankText(c.open) : 'Unranked'}</div>${c.open ? '' : '<div class="small muted">Play your placement matches</div>'}</div></div>
+    <div class="ranks">${['tank', 'damage', 'support'].map(r => `<div class="rank"><div class="k">${r}</div>${c[r] ? `<img onerror="this.style.visibility='hidden'" src="${esc(c[r].rank_icon)}" alt=""><div class="v">${OW.rankText(c[r])}</div>` : `<div class="v muted" style="margin:16px 0">Unranked</div>`}</div>`).join('')}</div>`;
   h += modeTabs();
   const st = stats(), g = st && st.general;
   if (!g) return h + `<p class="hint">No ${mode === 'competitive' ? 'competitive' : 'quick play'} games on your profile.</p>`;
@@ -132,24 +148,57 @@ function logHtml() {
   return h + (rows.length ? `<div class="list">${rows.join('')}</div>` : `<div class="empty"><b>No games logged yet</b>Play a few, then check back.</div>`) + `<p class="hint" style="margin-top:10px">Days are grouped by when Life Hub saw the change, so games late at night can show up the next day.</p>`;
 }
 /* ---------- weapon variants: your own tracker (no API has these) ---------- */
+/* ---------- weapon variants: one tap per hero per variant ----------
+   hub.owgrid = { heroKey: { Golden: 1 (owned) | -1 (doesn't exist for this hero) } }, variant types in hub.owtypes */
+const VCOL = { golden: '#f5c542', jade: '#3fbf8f', galactic: '#8b7cff', 'crimson wolf': '#e5484d', crimson: '#e5484d', wolf: '#c0c6d4' };
+const vcol = t => VCOL[t.toLowerCase()] || '#5db3e4';
+const types = () => K.get('owtypes', ['Golden', 'Jade', 'Galactic', 'Crimson Wolf']);
+const grid = () => K.get('owgrid', {}) || {};
+let wshow = 'all';
+(function migrate() {   /* variants typed in before the checklist existed */
+  if (K.get('owgridv', 0)) return; const g = grid(), T = types();
+  for (const v of WV.all()) { const t = T.find(x => x.toLowerCase() === String(v.name).trim().toLowerCase()); if (t && v.owned) { g[v.hero] = g[v.hero] || {}; g[v.hero][t] = 1; WV.remove(v.id); } }
+  K.put('owgrid', g); K.put('owgridv', 1);
+})();
+function counts() {
+  const g = grid(), T = types(), per = {}; let own = 0, avail = 0;
+  for (const t of T) per[t] = { own: 0, avail: 0 };
+  for (const hb of heroes) for (const t of T) { const v = (g[hb.key] || {})[t]; if (v === -1) continue; avail++; per[t].avail++; if (v === 1) { own++; per[t].own++; } }
+  return { own, avail, per };
+}
 function weaponsHtml() {
-  const all = WV.all(), owned = all.filter(v => v.owned), want = all.filter(v => !v.owned);
-  const per = k => all.filter(v => v.hero === k);
-  let list = heroes.slice().filter(hb => (role === 'all' || hb.role === role) && (!q || hb.name.toLowerCase().includes(q)));
-  list.sort((a, b) => per(b.key).filter(v => v.owned).length - per(a.key).filter(v => v.owned).length || a.name.localeCompare(b.name));
-  const withAny = heroes.filter(hb => per(hb.key).some(v => v.owned)).length;
-  let h = `<div class="grid2"><div class="stat"><div class="k">Variants owned</div><div class="v num">${owned.length}</div><div class="s">${want.length ? want.length + ' on your wishlist' : 'tap a hero to add one'}</div></div>
-    <div class="stat"><div class="k">Heroes covered</div><div class="v num">${withAny}<small> / ${heroes.length || '–'}</small></div><div class="progress" style="margin-top:6px"><i style="width:${heroes.length ? withAny / heroes.length * 100 : 0}%"></i></div></div></div>`;
-  if (owned.length) { const by = ['tank', 'damage', 'support'].map(r => `${ROLE[r]} <b>${owned.filter(v => heroBy(v.hero).role === r).length}</b>`).join(' · '); h += `<p class="small muted" style="margin:-4px 2px 12px">${by}</p>`; }
-  h += roleTabs() + `<input id="search" type="search" placeholder="Search heroes" value="${esc(q)}" aria-label="Search heroes">`;
+  const T = types(), g = grid(), c = counts(), other = WV.all().filter(v => v.owned).length;
+  let h = `<div class="grid2"><div class="stat"><div class="k">Owned</div><div class="v num">${c.own}<small> / ${c.avail || '–'}</small></div><div class="progress" style="margin-top:6px"><i style="width:${c.avail ? c.own / c.avail * 100 : 0}%"></i></div></div>
+    <div class="stat"><div class="k">Still to get</div><div class="v num">${Math.max(0, c.avail - c.own)}</div><div class="s">${c.avail ? Math.round(c.own / c.avail * 100) + '% done' : ''}${other ? ` · +${other} other` : ''}</div></div></div>`;
+  h += `<div class="vchips">${T.map(t => `<span class="vchip" style="--vc:${vcol(t)}">${esc(t)} <b>${c.per[t].own}/${c.per[t].avail}</b></span>`).join('')}</div>`;
+  h += roleTabs() + `<div class="seg" style="margin-bottom:10px">${[['all', 'All heroes'], ['missing', 'Missing some'], ['done', 'Complete']].map(([k, l]) => `<button type="button" data-wshow="${k}" aria-pressed="${wshow === k}">${l}</button>`).join('')}</div>`;
+  h += `<input id="search" type="search" placeholder="Search heroes" value="${esc(q)}" aria-label="Search heroes">`;
   if (!heroes.length) return h + `<div class="empty"><b>Loading heroes…</b>Needs internet the first time.</div>`;
-  h += `<div class="list">${list.map(hb => { const v = per(hb.key), o = v.filter(x => x.owned).length, w = v.length - o;
-    return `<button class="hero" type="button" data-hero="${hb.key}"><img onerror="this.style.visibility='hidden'" src="${esc(hb.portrait)}" alt="" loading="lazy"><span class="body"><b>${esc(hb.name)}</b><span class="m">${v.length ? v.filter(x => x.owned).map(x => esc(x.name)).slice(0, 3).join(', ') + (o > 3 ? '…' : '') + (w ? `${o ? ' · ' : ''}${w} wanted` : '') : `<span class="role">${hb.role}</span>`}</span></span><span class="cnt ${o ? 'on' : ''}">${o}</span></button>`; }).join('')}</div>`;
+  const full = hb => T.every(t => (g[hb.key] || {})[t]);
+  const list = heroes.filter(hb => (role === 'all' || hb.role === role) && (!q || hb.name.toLowerCase().includes(q)) && (wshow === 'all' || (wshow === 'done' ? full(hb) : !full(hb))));
+  h += `<p class="hint">Tap a box: <b>✓ owned</b> → <b>— not in the game for this hero</b> → empty. Tap a name for other variants and notes.</p>`;
+  h += `<div class="list" style="--n:${T.length}"><div class="wgrid head"><span></span><span style="text-align:left">Hero</span>${T.map(t => `<span style="color:${vcol(t)}">${esc(t)}</span>`).join('')}</div>`;
+  h += list.map(hb => { const row = g[hb.key] || {}, o = T.filter(t => row[t] === 1).length, av = T.filter(t => row[t] !== -1).length;
+    return `<div class="wgrid"><img onerror="this.style.visibility='hidden'" src="${esc(hb.portrait)}" alt="" loading="lazy"><button class="nm" type="button" data-hero="${hb.key}">${esc(hb.name)}<small>${o}/${av}${WV.all().some(v => v.hero === hb.key) ? ' · +' + WV.all().filter(v => v.hero === hb.key && v.owned).length + ' other' : ''}</small></button>
+      ${T.map(t => `<button class="cell ${row[t] === 1 ? 'own' : row[t] === -1 ? 'na' : ''}" type="button" data-cell="${hb.key}|${esc(t)}" style="--vc:${vcol(t)}" aria-label="${esc(hb.name)} ${esc(t)}: ${row[t] === 1 ? 'owned' : row[t] === -1 ? 'not available' : 'missing'}">${row[t] === 1 ? '✓' : row[t] === -1 ? '—' : ''}</button>`).join('')}</div>`; }).join('') + `</div>`;
+  h += `<div class="row-btns" style="margin-top:12px"><button class="btn sm" type="button" data-act="types">✏️ Variant types</button></div>`;
   return h;
+}
+function tapCell(key, t) {
+  const g = grid(), row = g[key] = g[key] || {}, v = row[t];
+  if (!v) row[t] = 1; else if (v === 1) row[t] = -1; else delete row[t];
+  K.put('owgrid', g);
+  if (row[t] === 1) { const hb = heroBy(key); if (types().every(x => row[x])) K.toast(`🎉 ${hb.name} complete!`); }
+  const y = window.scrollY; render(); window.scrollTo(0, y);
+}
+function editTypes() {
+  K.form({ title: 'Weapon variant types', fields: [{ k: 't', label: 'One per line (they become the columns)', type: 'textarea', value: types().join('\n'), attrs: 'rows="6"' },
+    { type: 'html', k: 'h', html: '<p class="small muted">Add new ones when Overwatch releases them. Removing one hides its column; your ticks stay saved.</p>' }],
+    save(v) { const T = [...new Set(v.t.split('\n').map(x => x.trim()).filter(Boolean))].slice(0, 8); if (!T.length) { K.toast('Keep at least one.'); return false; } K.put('owtypes', T); render(); } });
 }
 function heroSheet(key) {
   const hb = heroBy(key);
-  const f = K.form({ title: hb.name + ' · weapon variants', saveLabel: 'Add',
+  const f = K.form({ title: hb.name + ' · other variants', saveLabel: 'Add',
     fields: [{ type: 'html', k: 'list', html: `<div id="vlist"></div>` },
       { k: 'name', label: 'Add a variant (its name in the game)', placeholder: 'e.g. the variant’s name' },
       { k: 'owned', label: 'I have it (untick = wishlist)', type: 'checkbox', value: true },
@@ -186,6 +235,9 @@ document.addEventListener('click', e => {
   else if (d.mode) { mode = d.mode; K.put('ow.mode', mode); render(); }
   else if (d.role) { role = d.role; render(); }
   else if (d.hero) heroSheet(d.hero);
+  else if (d.cell) { const [k, ...t] = d.cell.split('|'); tapCell(k, t.join('|')); }
+  else if (d.wshow) { wshow = d.wshow; render(); }
+  else if (d.act === 'types') editTypes();
   else if (d.act === 'setup') setup();
   else if (d.act === 'refresh') load(true);
 });
