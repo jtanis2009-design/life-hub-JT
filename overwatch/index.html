@@ -66,7 +66,7 @@
 <script>
 const { esc } = K;
 const WV = K.coll('owweapons');
-const TABS = [['profile', 'Profile'], ['log', 'Game log'], ['heroes', 'Heroes'], ['weapons', 'Weapon variants']];
+const TABS = [['profile', 'Profile'], ['log', 'Game log'], ['seasons', 'Seasons'], ['heroes', 'Heroes'], ['weapons', 'Weapon variants']];
 let tab = K.get('ow.tab', 'profile'), mode = K.get('ow.mode', 'competitive'), role = 'all', q = '', data = null, heroes = [], err = '', loading = false;
 try { data = JSON.parse(localStorage.getItem('hub.ow.cache') || 'null'); } catch {}
 const cfg = () => K.get('ow', {}) || {};
@@ -83,7 +83,7 @@ function render() {
     if (err) html += `<div class="card" style="border-color:var(--bad)"><b style="color:var(--bad)">Couldn’t load your stats</b><p class="small muted" style="margin:4px 0 0">${err}</p></div>`;
     if (!data && loading) html += `<div class="empty"><b>Loading your career profile…</b>This can take a few seconds the first time.</div>`;
     else if (data && data.private) html += privateHtml();
-    else if (data) html += tab === 'profile' ? profileHtml() : tab === 'log' ? logHtml() : heroesHtml();
+    else if (data) html += tab === 'profile' ? profileHtml() : tab === 'log' ? logHtml() : tab === 'seasons' ? seasonsHtml() : heroesHtml();
   }
   K.$('#app').innerHTML = html;
 }
@@ -120,13 +120,54 @@ function profileHtml() {
   h += `<p class="hint" style="margin-top:12px">Updated ${K.ago ? K.ago(data.at) : new Date(data.at).toLocaleString()}. Blizzard refreshes your profile a while after each game. <button class="act" type="button" data-act="refresh" style="color:var(--ct);font-weight:700">Refresh</button></p>`;
   return h;
 }
+const fullHM = sec => `${Math.floor(sec / 3600)}h ${K.pad(Math.floor(sec % 3600 / 60))}m`;
+let hmode = K.get('ow.hmode', 'all');
+/* every hero, Quick Play + Competitive added up (or one of them) */
+function heroStats() {
+  const pick = m => ((m === 'competitive' ? data.comp : data.qp) || {}).heroes || {};
+  if (hmode !== 'all') return Object.entries(pick(hmode)).map(([k, x]) => [k, Object.assign({}, x)]);
+  const out = {}, add = (m, k, x) => { const o = out[k] = out[k] || { time_played: 0, games_played: 0, games_won: 0, elim: 0, ast: 0, dth: 0, qp: 0, comp: 0 };
+    o.time_played += x.time_played || 0; o.games_played += x.games_played || 0; o.games_won += x.games_won || 0; o[m] += x.time_played || 0;
+    const t = x.total || {}; o.elim += t.eliminations || 0; o.ast += t.assists || 0; o.dth += t.deaths || 0; };
+  for (const [k, x] of Object.entries(pick('quickplay'))) add('qp', k, x);
+  for (const [k, x] of Object.entries(pick('competitive'))) add('comp', k, x);
+  return Object.entries(out).map(([k, o]) => [k, Object.assign(o, { winrate: o.games_played ? o.games_won / o.games_played * 100 : 0, kda: o.dth ? ((o.elim + o.ast) / o.dth).toFixed(2) : '–' })]);
+}
 function heroRow([k, x], i, arr) {
   const hb = heroBy(k), max = arr && arr[0] ? arr[0][1].time_played : x.time_played;
-  return `<div class="hero">${hb.portrait ? `<img onerror="this.style.visibility='hidden'" src="${esc(hb.portrait)}" alt="" loading="lazy">` : '<span class="ph"></span>'}<span class="body"><b>${esc(hb.name)}</b><span class="m">${hrs(x.time_played)} · ${K.plural(x.games_played, 'game')} · ${Math.round(x.winrate)}% wins · KDA ${x.kda}</span><span class="progress"><i style="width:${Math.max(3, x.time_played / max * 100)}%"></i></span></span></div>`;
+  const split = x.qp != null && x.comp != null ? `<span class="m" style="display:block">Quick Play ${fullHM(x.qp)} · Competitive ${fullHM(x.comp)}</span>` : '';
+  return `<div class="hero">${hb.portrait ? `<img onerror="this.style.visibility='hidden'" src="${esc(hb.portrait)}" alt="" loading="lazy">` : '<span class="ph"></span>'}<span class="body"><b>${esc(hb.name)} <span style="float:right;font-variant-numeric:tabular-nums">${fullHM(x.time_played)}</span></b><span class="m">${K.plural(x.games_played, 'game')} · ${Math.round(x.winrate)}% wins · KDA ${x.kda}</span>${split}<span class="progress"><i style="width:${Math.max(3, x.time_played / max * 100)}%"></i></span></span></div>`;
 }
 function heroesHtml() {
-  const st = stats(); let list = Object.entries((st && st.heroes) || {}).filter(([k]) => role === 'all' || heroBy(k).role === role).sort((a, b) => b[1].time_played - a[1].time_played);
-  return modeTabs() + roleTabs() + (list.length ? `<div class="list">${list.map(heroRow).join('')}</div>` : `<div class="empty"><b>No heroes here yet</b>Play some ${mode === 'competitive' ? 'competitive' : 'quick play'} games.</div>`);
+  const list = heroStats().filter(([k]) => role === 'all' || heroBy(k).role === role).filter(([, x]) => x.time_played > 0).sort((a, b) => b[1].time_played - a[1].time_played);
+  const total = list.reduce((a, [, x]) => a + x.time_played, 0);
+  return `<div class="seg" style="margin-bottom:12px">${[['all', 'All modes'], ['competitive', 'Competitive'], ['quickplay', 'Quick Play']].map(([k, l]) => `<button type="button" data-hmode="${k}" aria-pressed="${hmode === k}">${l}</button>`).join('')}</div>` + roleTabs()
+    + (list.length ? `<div class="grid2"><div class="stat"><div class="k">Total time</div><div class="v num">${fullHM(total)}</div><div class="s">${role === 'all' ? 'all roles' : role}</div></div><div class="stat"><div class="k">Heroes played</div><div class="v num">${list.length}</div><div class="s">most: ${esc(heroBy(list[0][0]).name)}</div></div></div><div class="list">${list.map(heroRow).join('')}</div>`
+    : `<div class="empty"><b>No heroes here yet</b>Play some games, then refresh.</div>`);
+}
+/* ---------- competitive seasons, built from your daily saved stats ---------- */
+const DIV = ['bronze', 'silver', 'gold', 'platinum', 'diamond', 'master', 'grandmaster', 'champion'];
+const rankScore = t => { const m = String(t || '').toLowerCase().match(/^([a-z]+) (\d)$/); return m && DIV.includes(m[1]) ? DIV.indexOf(m[1]) * 5 + (6 - +m[2]) : -1; };
+function seasonsHtml() {
+  const snaps = K.get('owsnaps', []) || [], cur = (((data || {}).summary || {}).competitive || {}).pc || {};
+  const S = {}, get = n => S[n] = S[n] || { n, games: 0, won: 0, lost: 0, tp: 0, first: {}, last: {}, peak: {}, from: '', to: '' };
+  snaps.forEach((b, i) => {
+    const n = (b.ranks || {}).season || (i ? (snaps[i - 1].ranks || {}).season : 0); if (!n) return;
+    const x = get(n); x.from = x.from || b.d; x.to = b.d;
+    for (const r of ['open', 'tank', 'damage', 'support']) { const v = (b.ranks || {})[r]; if (!v) continue; if (!x.first[r]) x.first[r] = v; x.last[r] = v; if (rankScore(v) > rankScore(x.peak[r])) x.peak[r] = v; }
+    const a = snaps[i - 1]; if (!a || !b.comp || !a.comp) return;
+    const reset = b.comp.gp < a.comp.gp;                                  /* Blizzard started counting again: a new season */
+    const d = k => reset ? b.comp[k] : b.comp[k] - a.comp[k];
+    x.games += d('gp'); x.won += d('gw'); x.lost += d('gl'); x.tp += d('tp');
+  });
+  if (cur.season && !S[cur.season]) { const x = get(cur.season); for (const r of ['open', 'tank', 'damage', 'support']) if (cur[r]) x.first[r] = x.last[r] = x.peak[r] = OW.rankText(cur[r]); }
+  const list = Object.values(S).sort((a, b) => b.n - a.n);
+  let h = `<p class="hint">Blizzard only shows your current season, so Life Hub keeps its own history from the stats it saves every day. It starts from when you linked your BattleTag.</p>`;
+  if (!list.length) return h + `<div class="empty"><b>No season data yet</b>Open this page now and then: every day adds to your season history.</div>`;
+  return h + list.map(x => { const live = x.n === cur.season, rows = ['open', 'tank', 'damage', 'support'].filter(r => x.last[r]);
+    return `<div class="card"><div class="k">Season ${x.n}${live ? ' · <span style="color:var(--ct)">now</span>' : ''}${x.from ? ` · <span class="muted">${K.fmtDay(x.from)} – ${K.fmtDay(x.to)}</span>` : ''}</div>
+      ${x.games ? `<div class="grid2" style="margin:10px 0 6px"><div class="stat"><div class="k">Games</div><div class="v num">${x.games}</div><div class="s"><span class="wl"><span class="w">${x.won}W</span> · <span class="l">${x.lost}L</span></span></div></div><div class="stat"><div class="k">Win rate · time</div><div class="v num">${Math.round(x.won / x.games * 100)}<small>%</small></div><div class="s">${fullHM(x.tp)} played</div></div></div>` : `<p class="small muted" style="margin:6px 0">No competitive games logged yet this season.</p>`}
+      ${rows.length ? `<div class="list" style="margin:0">${rows.map(r => `<div class="item" style="min-height:0;padding:9px 12px"><span class="body"><span class="title">${r === 'open' ? '⭐ Open Queue' : ROLE[r]}</span><span class="meta"><span>start ${x.first[r]}</span><span>peak <b>${x.peak[r]}</b></span></span></span><span class="right">${x.last[r]}</span></div>`).join('')}</div>` : ''}</div>`; }).join('');
 }
 function roleTabs() { return `<div class="tabs">${[['all', 'All'], ['tank', 'Tank'], ['damage', 'Damage'], ['support', 'Support']].map(([k, l]) => `<button type="button" data-role="${k}" aria-pressed="${role === k}">${l}</button>`).join('')}</div>`; }
 /* game log: what changed between the daily snapshots */
@@ -233,6 +274,7 @@ document.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
   if (d.tab) { tab = d.tab; K.put('ow.tab', tab); role = 'all'; q = ''; render(); window.scrollTo(0, 0); }
   else if (d.mode) { mode = d.mode; K.put('ow.mode', mode); render(); }
+  else if (d.hmode) { hmode = d.hmode; K.put('ow.hmode', hmode); render(); }
   else if (d.role) { role = d.role; render(); }
   else if (d.hero) heroSheet(d.hero);
   else if (d.cell) { const [k, ...t] = d.cell.split('|'); tapCell(k, t.join('|')); }
